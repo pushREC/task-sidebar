@@ -3,37 +3,60 @@ import { safetyError } from "../safety.js";
 
 /**
  * Sprint H.2.1 — optimistic concurrency control for writers.
+ * Sprint H R1 (Opus + Gemini) — upgraded to nanosecond precision.
  *
- * If the caller passes `expectedModified`, we `fs.stat` the target path
- * and compare `stat.mtime.toISOString()` byte-for-byte against it. On
- * mismatch we throw a `safetyError(..., 409, {currentModified})`. The
- * router's `handleError` merges the `extra` object into the JSON response,
- * so the client sees `{ok:false, error:"mtime-mismatch", currentModified:"..."}`
- * and can refetch before overwriting.
+ * Protocol:
+ *   - Client sends `expectedModified` as a string. Two formats are
+ *     accepted for back-compat:
+ *       (a) BigInt-string of nanoseconds (e.g. "1776552269646123456") — preferred
+ *       (b) ISO8601 millisecond string (e.g. "2026-04-18T22:32:06.183Z") — legacy
+ *   - Server stats the file and produces BOTH representations from
+ *     `stat.mtimeNs` (BigInt nanoseconds). If the client value looks
+ *     like a digits-only string, compare as BigInt; else compare as ISO.
+ *   - Mismatch → 409 with `currentModified` (ISO) AND `currentModifiedNs`
+ *     (BigInt string) for forward-compat.
  *
- * If `expectedModified` is `undefined`, this function is a no-op —
- * backward-compatible with callers that don't yet pass the flag.
+ * Why nanosecond: macOS APFS + Linux ext4 store nanosecond mtime. Two
+ * writes within the same millisecond produce identical ISO strings —
+ * an optimistic lock comparing ISO would let the second write clobber
+ * the first silently. BigInt ns comparison is exact.
  *
- * Design notes (first-principles / Plan II §0.2 T-H2):
- *   - Server-side clock only. We never trust client-supplied wall time.
- *     The expected value originated from a prior `fs.stat` on this server,
- *     so comparing ISO strings is exact.
- *   - ENOENT propagates. Caller (task-body-edit etc.) typically calls
- *     `existsSync` BEFORE this helper and surfaces 404 from its own path.
- *   - Atomic-rename drift: `writeFileAtomic` uses `tmp + fsync + rename`;
- *     the post-rename mtime is the tmp file's mtime (new). A client that
- *     previously read the file under its old mtime will see 409 on next
- *     edit — correct.
+ * API response carries `currentModified` (ISO, for display) AND
+ * `currentModifiedNs` (source-of-truth, for next-edit handshake).
  */
+
+function toNsString(nsBigint: bigint): string {
+  return nsBigint.toString();
+}
+
 export async function assertMtimeMatch(
   absPath: string,
   expectedModified: string | undefined,
 ): Promise<void> {
   if (expectedModified === undefined) return;
 
-  const st = await stat(absPath);
-  const currentModified = st.mtime.toISOString();
-  if (currentModified !== expectedModified) {
-    throw safetyError("mtime-mismatch", 409, { currentModified });
+  // BigIntStats surfaces mtimeNs (BigInt nanoseconds) on node ≥ 18. The
+  // non-BigInt variant rounds to mtimeMs (ms precision) which produces
+  // ISO collisions between writes in the same millisecond.
+  const st = await stat(absPath, { bigint: true });
+  const currentNs: bigint = st.mtimeNs;
+  // ISO string for display + legacy comparison. Build from ms since
+  // epoch (derived from ns) — Date() only accepts number, so divide.
+  const currentMs = Number(currentNs / 1_000_000n);
+  const currentModified = new Date(currentMs).toISOString();
+  const currentModifiedNs = toNsString(currentNs);
+
+  // Digit-only string → BigInt ns comparison (high precision, preferred).
+  // Anything else → ISO string fallback (millisecond precision, legacy).
+  const isDigits = /^\d+$/.test(expectedModified);
+  const match = isDigits
+    ? expectedModified === currentModifiedNs
+    : expectedModified === currentModified;
+
+  if (!match) {
+    throw safetyError("mtime-mismatch", 409, {
+      currentModified,
+      currentModifiedNs,
+    });
   }
 }

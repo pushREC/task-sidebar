@@ -1065,7 +1065,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
 
       {mtimeConflict && (
         <div className="prop-error-row prop-error-row--conflict" role="status" aria-live="polite">
-          This file was edited elsewhere. Your draft is kept — refresh the row and reapply to save.
+          File was edited elsewhere. Row refreshed with latest — re-apply your change to save.
         </div>
       )}
 

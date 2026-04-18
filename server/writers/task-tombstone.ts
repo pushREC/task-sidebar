@@ -2,7 +2,7 @@ import { rename, unlink, readdir, mkdir, stat, readFile, writeFile } from "fs/pr
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { safetyError, assertSafeTasksPath } from "../safety.js";
-import { writeFileAtomic } from "./atomic.js";
+import { writeFileAtomic, writeFileExclusive } from "./atomic.js";
 
 /**
  * Sprint H.3.1 — real delete-undo via tombstoned files.
@@ -76,6 +76,25 @@ function encodeEntity(absSrcPath: string, timestamp: number): string {
   return `${timestamp}__entity__${encodeURIComponent(rel)}.md`;
 }
 
+// R1 CRITICAL (Gemini TOMBSTONE-FILENAME-B64-SLASH + Opus #1) — standard
+// base64 uses `/`, `+`, `=` chars. `/` in a filename creates subfolders,
+// breaking writeFile. Use URL-safe base64 (RFC 4648 §5): `-` for `+`,
+// `_` for `/`, strip `=` padding. Decoding reverses the swap + pads.
+function urlSafeBase64Encode(s: string): string {
+  return Buffer.from(s, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function urlSafeBase64Decode(s: string): string {
+  // Restore standard base64 alphabet + re-pad.
+  const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
+  const standard = s.replace(/-/g, "+").replace(/_/g, "/") + pad;
+  return Buffer.from(standard, "base64").toString("utf8");
+}
+
 function encodeInline(
   absTasksPath: string,
   line: number,
@@ -85,7 +104,7 @@ function encodeInline(
   const rel = absTasksPath.startsWith(VAULT_ROOT + "/")
     ? absTasksPath.slice(VAULT_ROOT.length + 1)
     : absTasksPath;
-  const b64text = Buffer.from(text, "utf8").toString("base64");
+  const b64text = urlSafeBase64Encode(text);
   return `${timestamp}__inline__${encodeURIComponent(rel)}__${line}__${b64text}.tombstone`;
 }
 
@@ -110,7 +129,7 @@ function decodeTombstoneName(name: string):
       timestamp: parseInt(inlineMatch[1], 10),
       originalPath: decodeURIComponent(inlineMatch[2]),
       line: parseInt(inlineMatch[3], 10),
-      text: Buffer.from(inlineMatch[4], "base64").toString("utf8"),
+      text: urlSafeBase64Decode(inlineMatch[4]),
     };
   }
   return null;
@@ -141,18 +160,39 @@ export interface MoveInlineToTombstoneInput {
   text: string;
 }
 
+// R1 HIGH (Opus #1, Gemini) — macOS APFS filename component limit is 255
+// BYTES (not chars). If the tombstone name would exceed, truncate the
+// base64(text) payload but preserve the prefix so decodeTombstoneName
+// still surfaces the path+line. The restored line is still byte-identical
+// IF truncation didn't hit; otherwise we fall back to storing the text
+// in the file BODY (and encode a sentinel `@FILE` token in the name).
+const MAX_TOMBSTONE_NAME_BYTES = 240; // APFS 255 with a small safety margin
+
 export async function moveInlineToTombstone(
   input: MoveInlineToTombstoneInput,
 ): Promise<MoveToTombstoneResult> {
   await ensureTombstoneDir();
   const timestamp = Date.now();
-  const dstName = encodeInline(input.tasksPath, input.line, input.text, timestamp);
+  let dstName = encodeInline(input.tasksPath, input.line, input.text, timestamp);
+  let fileBody = "";
+  if (Buffer.byteLength(dstName, "utf8") > MAX_TOMBSTONE_NAME_BYTES) {
+    // Overflow fallback: encode a sentinel in the name, put the raw text
+    // in the file body. decodeTombstoneName detects `@FILE` and signals
+    // the restore code to read body.
+    const rel = input.tasksPath.startsWith(VAULT_ROOT + "/")
+      ? input.tasksPath.slice(VAULT_ROOT.length + 1)
+      : input.tasksPath;
+    dstName = `${timestamp}__inline__${encodeURIComponent(rel)}__${input.line}__@FILE.tombstone`;
+    fileBody = input.text;
+  }
   const dstPath = `${TOMBSTONE_DIR}/${dstName}`;
   assertSafeTombstonePath(dstPath);
-  // For inline, we store a small marker file; the text is in the filename
-  // (base64). The file body is unused but written as "" so the existsSync
-  // probe from the sweeper works.
-  await writeFile(dstPath, "", "utf8");
+  try {
+    await writeFile(dstPath, fileBody, "utf8");
+  } catch (err) {
+    // R1 MEDIUM (Opus #6) — surface meaningful error instead of generic 500.
+    throw safetyError(`Failed to write tombstone: ${String(err)}`, 500);
+  }
   return { tombstoneId: dstName };
 }
 
@@ -183,6 +223,11 @@ export async function restoreFromTombstone(tombstoneId: string): Promise<Restore
   if (decoded.kind === "entity") {
     const targetAbs = `${VAULT_ROOT}/${decoded.originalPath}`;
     assertSafeTasksPath(targetAbs);
+    // R1 CRITICAL (Opus #4) — fs.rename SILENTLY OVERWRITES existing
+    // target on POSIX. Use writeFileExclusive (O_EXCL) pattern: read
+    // tombstone bytes → writeFileExclusive target (throws EEXIST if
+    // occupied) → unlink tombstone on success. This closes the
+    // existsSync→rename TOCTOU window.
     if (existsSync(targetAbs)) {
       throw safetyError(
         `Original path re-occupied; cannot restore without overwrite: ${decoded.originalPath}`,
@@ -190,7 +235,28 @@ export async function restoreFromTombstone(tombstoneId: string): Promise<Restore
         { originalPath: decoded.originalPath },
       );
     }
-    await rename(tombstonePath, targetAbs);
+    try {
+      const bytes = await readFile(tombstonePath);
+      await writeFileExclusive(targetAbs, bytes.toString("utf8"));
+      await unlink(tombstonePath);
+    } catch (err) {
+      // R1 MEDIUM (Opus #3) — sweeper race: tombstone swept between
+      // decode and read → ENOENT. Translate to 404 for the client.
+      if (err && typeof err === "object" && "code" in err) {
+        const code = (err as { code?: string }).code;
+        if (code === "ENOENT") {
+          throw safetyError(`Tombstone swept before restore completed`, 404);
+        }
+        if (code === "EEXIST") {
+          throw safetyError(
+            `Original path re-occupied between check and write: ${decoded.originalPath}`,
+            409,
+            { originalPath: decoded.originalPath },
+          );
+        }
+      }
+      throw err;
+    }
     return { kind: "entity", restoredPath: decoded.originalPath };
   }
 
@@ -203,15 +269,28 @@ export async function restoreFromTombstone(tombstoneId: string): Promise<Restore
       404,
     );
   }
+  // Determine text source: filename-encoded (default) or file-body
+  // (overflow fallback sentinel `@FILE`).
+  let text = decoded.text;
+  if (text === "@FILE") {
+    try {
+      text = await readFile(tombstonePath, "utf8");
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "ENOENT") {
+        throw safetyError(`Tombstone swept before restore completed`, 404);
+      }
+      throw err;
+    }
+  }
   const raw = await readFile(targetAbs, "utf8");
   const lines = raw.split("\n");
   const insertIdx = Math.min(Math.max(0, decoded.line - 1), lines.length);
-  lines.splice(insertIdx, 0, decoded.text);
+  lines.splice(insertIdx, 0, text);
   let updated = lines.join("\n");
   // Preserve trailing-newline convention of the original file.
   if (raw.endsWith("\n") && !updated.endsWith("\n")) updated += "\n";
   await writeFileAtomic(targetAbs, updated);
-  await unlink(tombstonePath);
+  try { await unlink(tombstonePath); } catch { /* may have been swept — OK */ }
   return { kind: "inline", restoredPath: decoded.originalPath };
 }
 
