@@ -9,6 +9,12 @@ import { startWatcher } from "./watcher.js";
 import { sseHandler, broadcast } from "./sse.js";
 import { taskRoutes } from "./routes.js";
 import { installShutdownDrain } from "./status-reconcile-queue.js";
+import {
+  ensureTombstoneDir,
+  cleanupOrphans,
+  sweepTombstones,
+  TOMBSTONE_TTL_MS,
+} from "./writers/task-tombstone.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,6 +25,15 @@ async function start(): Promise<void> {
   // tasks transitioned to "done" within the window don't silently miss
   // their reconcile side-effects on server restart.
   installShutdownDrain();
+
+  // Sprint H.3.5 — tombstone dir setup + orphan cleanup BEFORE app.listen.
+  // ensureTombstoneDir is idempotent; cleanupOrphans removes any
+  // tombstone older than 1h (handles prior crashes mid-window).
+  await ensureTombstoneDir();
+  const orphansSwept = await cleanupOrphans();
+  if (orphansSwept > 0) {
+    process.stderr.write(`[tombstone] startup cleanup removed ${orphansSwept} orphans\n`);
+  }
 
   const app = express();
 
@@ -91,8 +106,29 @@ async function start(): Promise<void> {
     broadcast({ type: "vault-changed", slug });
   });
 
+  // Sprint H.3.5 — tombstone sweeper. Runs every TOMBSTONE_TTL_MS to
+  // delete tombstones older than the TTL (5.5s default). unref() so the
+  // interval doesn't keep Node alive at shutdown. Silent-error per run
+  // (logs via the module's own stderr path on failures).
+  const tombstoneSweeper = setInterval(() => {
+    void sweepTombstones().catch((err) => {
+      process.stderr.write(`[tombstone] sweep error: ${err}\n`);
+    });
+  }, TOMBSTONE_TTL_MS);
+  tombstoneSweeper.unref();
+
   async function shutdown(signal: string): Promise<void> {
     process.stdout.write(`Received ${signal}, shutting down…\n`);
+    clearInterval(tombstoneSweeper);
+    // Final sweep to clean any tombstones that expired during shutdown.
+    try {
+      const swept = await sweepTombstones();
+      if (swept > 0) {
+        process.stderr.write(`[tombstone] shutdown drain swept ${swept}\n`);
+      }
+    } catch (err) {
+      console.error("tombstone shutdown sweep failed:", err);
+    }
     try {
       await watcher.close();
     } catch (err) {
