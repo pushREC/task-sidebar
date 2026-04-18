@@ -155,6 +155,10 @@ export function editTaskFieldApi(args: {
   entityPath: string;
   field: string;
   value: string | number | null;
+  // Sprint H.2.4 — optional optimistic-concurrency token. Send `task.modified`
+  // captured at edit-open time; server returns 409 `{error:"mtime-mismatch",
+  // currentModified}` if another writer changed the file in the meantime.
+  expectedModified?: string;
 }): Promise<ApiResult<FieldEditResult>> {
   return postJson<FieldEditResult>("/api/tasks/field-edit", args);
 }
@@ -218,6 +222,8 @@ export interface BodyEditResult { ok: boolean; entityPath?: string }
 export function editTaskBodyApi(args: {
   entityPath: string;
   body: string;
+  // Sprint H.2.4 — same mtime-lock contract as editTaskFieldApi.
+  expectedModified?: string;
 }): Promise<ApiResult<BodyEditResult>> {
   return postJson<BodyEditResult>("/api/tasks/body-edit", args);
 }
