@@ -332,7 +332,7 @@ router.post("/tasks/delete-inline", async (req: Request, res: Response) => {
 // ─── POST /api/tasks/body-edit ───────────────────────────────────────────────
 
 router.post("/tasks/body-edit", async (req: Request, res: Response) => {
-  const { entityPath, body } = req.body as Record<string, unknown>;
+  const { entityPath, body, expectedModified } = req.body as Record<string, unknown>;
 
   if (typeof entityPath !== "string") {
     res.status(400).json({ ok: false, error: "entityPath must be a string" });
@@ -342,9 +342,18 @@ router.post("/tasks/body-edit", async (req: Request, res: Response) => {
     res.status(400).json({ ok: false, error: "body must be a string" });
     return;
   }
+  // Sprint H.2.2 — expectedModified is optional; if present must be string.
+  if (expectedModified !== undefined && typeof expectedModified !== "string") {
+    res.status(400).json({ ok: false, error: "expectedModified must be a string if present" });
+    return;
+  }
 
   try {
-    const result = await editTaskBody({ entityPath, body });
+    const result = await editTaskBody({
+      entityPath,
+      body,
+      expectedModified: typeof expectedModified === "string" ? expectedModified : undefined,
+    });
     res.json({ ok: true, entityPath: result.entityPath });
   } catch (err) {
     handleError(err, res);

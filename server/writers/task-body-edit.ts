@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import matter from "gray-matter";
 import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
+import { assertMtimeMatch } from "./mtime-lock.js";
 
 /**
  * Replaces the markdown body (everything after frontmatter) of an entity
@@ -29,6 +30,11 @@ function toRelative(abs: string): string {
 export interface TaskBodyEditInput {
   entityPath: string;
   body: string;
+  // Sprint H.2.2 — optional optimistic-concurrency token. When present,
+  // the server asserts `fs.stat(resolvedPath).mtime.toISOString()` equals
+  // this value before the write. Mismatch → 409 with currentModified in
+  // the response so the client can refetch before overwriting.
+  expectedModified?: string;
 }
 
 export interface TaskBodyEditResult {
@@ -73,6 +79,11 @@ export async function editTaskBody(
   if (!existsSync(resolved)) {
     throw safetyError(`Entity task file not found: ${toRelative(resolved)}`, 404);
   }
+
+  // Sprint H.2.2 — optimistic-lock check BEFORE readFile so a mismatch
+  // short-circuits without paying the read cost. If input.expectedModified
+  // is undefined (backward-compat) this is a no-op.
+  await assertMtimeMatch(resolved, input.expectedModified);
 
   const raw = await readFile(resolved, "utf8");
   const parsed = matter(raw);
