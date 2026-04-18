@@ -35,11 +35,41 @@ export interface EntityFields {
   parentGoal?: string;
 }
 
+/**
+ * Sprint G — Bulk selection + undo toast.
+ * `pendingUndo` is ONE window at a time (keyed by action+taskIds);
+ * clicking Undo or ⌘Z within 5s fires the reverter. After 5s the window
+ * expires (UndoToast unmounts + server-side reconcile commits).
+ */
+export type UndoAction = "done" | "cancel" | "delete" | "bulk-done";
+
+export interface PendingUndo {
+  action: UndoAction;
+  taskIds: string[];
+  // entityPaths for tasks that were done → server holds a 5s delayed
+  // reconcile for each path; we call /api/tasks/undo-reconcile on each
+  // to cancel them if the user undoes.
+  entityPaths: string[];
+  // label shown in the toast (e.g. "3 tasks done" / "Task deleted")
+  label: string;
+  undoneAt: number;  // Date.now() captured at queue-time
+  revert: () => Promise<void>;  // caller-provided reverter
+}
+
 interface SidebarState {
   // ── Live vault data (NOT persisted) ─────────────────────────────────────
   vault: VaultResponse | null;
   errorTaskIds: Set<string>;
+  /** Legacy single-selection pointer for backward-compat with j/k nav.
+   *  Sprint G adds `selectedTaskIds` as the authoritative multi-select.
+   *  When one item is in selectedTaskIds, both reflect the same id. */
   selectedTaskId: string | null;
+  /** Sprint G — multi-selection. Superset of selectedTaskId. Empty when no
+   *  rows are selected. All actions that needed the single id now also
+   *  consult this set first and fall back to selectedTaskId. */
+  selectedTaskIds: Set<string>;
+  /** Sprint G — one pending undo window at a time. `null` = no toast. */
+  pendingUndo: PendingUndo | null;
 
   // ── Persisted view state ────────────────────────────────────────────────
   activeTab: ActiveTab;
@@ -63,6 +93,13 @@ interface SidebarState {
   markTaskError: (taskId: string) => void;
   clearTaskError: (taskId: string) => void;
   setSelectedTaskId: (id: string | null) => void;
+  // Sprint G actions
+  addSelection: (id: string) => void;
+  removeSelection: (id: string) => void;
+  toggleSelection: (id: string) => void;
+  setSelection: (ids: string[]) => void;
+  clearSelection: () => void;
+  setPendingUndo: (undo: PendingUndo | null) => void;
   setActiveTab: (tab: ActiveTab) => void;
   toggleProjectExpanded: (slug: string) => void;
   toggleBucketCollapsed: (bucket: BucketName) => void;
@@ -178,6 +215,8 @@ export const useSidebarStore = create<SidebarState>()(
       vault: null,
       errorTaskIds: new Set(),
       selectedTaskId: null,
+      selectedTaskIds: new Set(),
+      pendingUndo: null,
       activeTab: "agenda",
       collapsedBuckets: new Set<BucketName>(DEFAULT_COLLAPSED),
       expandedProjects: new Set<string>(),
@@ -246,7 +285,54 @@ export const useSidebarStore = create<SidebarState>()(
       },
 
       setSelectedTaskId(id) {
-        set({ selectedTaskId: id });
+        // Single-select also seeds the multi-set (single→multi transition).
+        if (id === null) {
+          set({ selectedTaskId: null, selectedTaskIds: new Set() });
+        } else {
+          set({ selectedTaskId: id, selectedTaskIds: new Set([id]) });
+        }
+      },
+
+      addSelection(id) {
+        set((state) => {
+          const next = new Set(state.selectedTaskIds);
+          next.add(id);
+          return { selectedTaskIds: next, selectedTaskId: id };
+        });
+      },
+      removeSelection(id) {
+        set((state) => {
+          const next = new Set(state.selectedTaskIds);
+          next.delete(id);
+          // If we just cleared the anchor, promote another member (or null).
+          const nextAnchor = state.selectedTaskId === id
+            ? (next.size > 0 ? [...next][next.size - 1] : null)
+            : state.selectedTaskId;
+          return { selectedTaskIds: next, selectedTaskId: nextAnchor };
+        });
+      },
+      toggleSelection(id) {
+        const current = get().selectedTaskIds;
+        if (current.has(id)) {
+          get().removeSelection(id);
+        } else {
+          get().addSelection(id);
+        }
+      },
+      setSelection(ids) {
+        const next = new Set(ids);
+        set({
+          selectedTaskIds: next,
+          // Anchor = last element (becomes the j/k cursor)
+          selectedTaskId: ids.length > 0 ? ids[ids.length - 1] : null,
+        });
+      },
+      clearSelection() {
+        set({ selectedTaskIds: new Set(), selectedTaskId: null });
+      },
+
+      setPendingUndo(undo) {
+        set({ pendingUndo: undo });
       },
 
       setActiveTab(tab) {

@@ -205,21 +205,55 @@ export function useKeyboardNav(
       // the focus trap that Gemini round-2 flagged.
 
       // j / k — move selection within current bucket (D14 bucket-bounded)
+      // Sprint G — Shift+j/k extends the selection range across visible rows.
       if (e.key === "j") {
         e.preventDefault();
-        moveSelectionBucketBounded(state.selectedTaskId, 1);
+        if (e.shiftKey) {
+          extendSelectionRange(1);
+        } else {
+          moveSelectionBucketBounded(state.selectedTaskId, 1);
+        }
         return;
       }
       if (e.key === "k") {
         e.preventDefault();
-        moveSelectionBucketBounded(state.selectedTaskId, -1);
+        if (e.shiftKey) {
+          extendSelectionRange(-1);
+        } else {
+          moveSelectionBucketBounded(state.selectedTaskId, -1);
+        }
         return;
       }
 
-      // x — toggle selected task
+      // x — toggle selected task (Sprint G: bulk-aware — if multiple selected,
+      // toggling via `x` operates on all of them via BulkBar's handleBulkDone).
       if (e.key === "x") {
         e.preventDefault();
         onToggleSelected();
+        return;
+      }
+
+      // Sprint G — Space toggles the selection of the current row. If none
+      // is selected, falls back to selecting the first visible row.
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        const current = state.selectedTaskId;
+        if (current === null) {
+          const ids = getVisibleTaskIds();
+          if (ids.length > 0) {
+            state.setSelectedTaskId(ids[0]);
+          }
+          return;
+        }
+        state.toggleSelection(current);
+        return;
+      }
+
+      // Sprint G — ⌘A selects ALL visible rows.
+      if ((e.key === "a" || e.key === "A") && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const ids = getVisibleTaskIds();
+        state.setSelection(ids);
         return;
       }
 
@@ -251,12 +285,16 @@ export function useKeyboardNav(
         return;
       }
 
-      // Escape — collapse expanded task panel first, then clear selection
+      // Escape — collapse expanded task panel → clear multi-selection → clear single.
       if (e.key === "Escape") {
         e.preventDefault();
         const currentState = store.getState();
         if ("expandedTaskId" in currentState && currentState.expandedTaskId) {
           (currentState as { setExpandedTaskId: (id: null) => void }).setExpandedTaskId(null);
+        } else if (currentState.selectedTaskIds.size > 1) {
+          // Sprint G — Esc on multi-selection clears bulk first,
+          // second Esc clears the anchor.
+          currentState.clearSelection();
         } else {
           currentState.setSelectedTaskId(null);
         }
@@ -352,6 +390,30 @@ function moveSelectionBucketBounded(
   // Bucket-bounded: stop at edges (don't wrap).
   const next = Math.max(0, Math.min(ids.length - 1, idx + direction));
   state.setSelectedTaskId(ids[next]);
+}
+
+/**
+ * Sprint G — extend current selection by one visible row in `direction`.
+ * Adds the newly reached row to the selection Set (Shift+j/k behavior).
+ * If no anchor exists, behaves like a simple move.
+ */
+function extendSelectionRange(direction: 1 | -1): void {
+  const state = useSidebarStore.getState();
+  const ids = getVisibleTaskIds();
+  if (ids.length === 0) return;
+  const anchor = state.selectedTaskId;
+  if (anchor === null) {
+    state.setSelectedTaskId(ids[direction === 1 ? 0 : ids.length - 1]);
+    return;
+  }
+  const idx = ids.indexOf(anchor);
+  if (idx === -1) {
+    state.setSelectedTaskId(ids[0]);
+    return;
+  }
+  const nextIdx = Math.max(0, Math.min(ids.length - 1, idx + direction));
+  if (nextIdx === idx) return; // at edge
+  state.addSelection(ids[nextIdx]);
 }
 
 /**

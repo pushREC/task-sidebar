@@ -195,6 +195,13 @@ export function editTaskBodyApi(args: {
   return postJson<BodyEditResult>("/api/tasks/body-edit", args);
 }
 
+export interface CancelReconcileResult { ok: boolean; canceled?: boolean }
+export function cancelReconcileApi(args: {
+  entityPath: string;
+}): Promise<ApiResult<CancelReconcileResult>> {
+  return postJson<CancelReconcileResult>("/api/tasks/cancel-reconcile", args);
+}
+
 export interface ProjectFieldEditResult { ok: boolean }
 export function editProjectFieldApi(args: {
   slug: string;

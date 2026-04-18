@@ -12,6 +12,8 @@ import { promoteAndEditTask } from "./writers/task-promote-and-edit.js";
 import { editProjectField } from "./writers/project-field-edit.js";
 import { deleteEntityTask, deleteInlineTask } from "./writers/task-delete.js";
 import { editTaskBody } from "./writers/task-body-edit.js";
+import { cancelReconcile } from "./status-reconcile-queue.js";
+import { resolveTasksPath, assertSafeTasksPath } from "./safety.js";
 import type { SafetyError } from "./safety.js";
 
 const router: ExpressRouter = Router();
@@ -340,6 +342,29 @@ router.post("/tasks/body-edit", async (req: Request, res: Response) => {
   try {
     const result = await editTaskBody({ entityPath, body });
     res.json({ ok: true, entityPath: result.entityPath });
+  } catch (err) {
+    handleError(err, res);
+  }
+});
+
+// ─── POST /api/tasks/cancel-reconcile ─────────────────────────────────────────
+// Sprint G — client calls this after an Undo within the 5s pending window
+// to cancel a queued status_reconcile.py fire. Safe to call for paths with
+// no pending reconcile (returns { canceled: false }).
+
+router.post("/tasks/cancel-reconcile", async (req: Request, res: Response) => {
+  const { entityPath } = req.body as Record<string, unknown>;
+
+  if (typeof entityPath !== "string") {
+    res.status(400).json({ ok: false, error: "entityPath must be a string" });
+    return;
+  }
+
+  try {
+    const resolved = resolveTasksPath(entityPath);
+    assertSafeTasksPath(resolved);
+    const canceled = cancelReconcile(resolved);
+    res.json({ ok: true, canceled });
   } catch (err) {
     handleError(err, res);
   }

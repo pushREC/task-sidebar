@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import matter from "gray-matter";
 import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
-import { fireStatusReconcile } from "../status-reconcile.js";
+import { queueReconcile, cancelReconcile } from "../status-reconcile-queue.js";
 
 const VALID_STATUSES = new Set([
   "backlog",
@@ -77,11 +77,21 @@ export async function editTaskStatus(input: TaskStatusEditInput): Promise<TaskSt
   const updated = matter.stringify(updatedContent, parsed.data);
   await writeFileAtomic(resolvedPath, updated);
 
-  // Fire reconcile when transitioning to done (fire-and-forget)
+  // Sprint G — reconcile is now QUEUED with 5s delay instead of fire-and-forget.
+  // A same-entity status change within the window cancels the pending
+  // reconcile (e.g. done → open = undo). If the user moves AWAY from done
+  // explicitly, always cancel any pending reconcile to avoid phantom fires.
   const transitioningToDone = status === "done" && previousStatus !== "done";
   if (transitioningToDone) {
-    fireStatusReconcile();
+    queueReconcile(resolvedPath);
+  } else if (previousStatus === "done") {
+    // Leaving the done state — cancel any pending reconcile for this path.
+    cancelReconcile(resolvedPath);
   }
 
+  // `reconcileFired` remains true on the done-transition path so existing
+  // tests (scripts/verify.sh) still observe the signal — the reconcile
+  // will fire 5s later via the queue, which is still fire-and-forget from
+  // the client's perspective.
   return { entityPath: toRelative(resolvedPath), reconcileFired: transitioningToDone };
 }

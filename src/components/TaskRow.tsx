@@ -54,6 +54,9 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   const errorTaskIds = useSidebarStore((s) => s.errorTaskIds);
   const selectedTaskId = useSidebarStore((s) => s.selectedTaskId);
   const setSelectedTaskId = useSidebarStore((s) => s.setSelectedTaskId);
+  const selectedTaskIds = useSidebarStore((s) => s.selectedTaskIds);
+  const addSelection = useSidebarStore((s) => s.addSelection);
+  const toggleSelection = useSidebarStore((s) => s.toggleSelection);
   const expandedTaskId = useSidebarStore((s) => s.expandedTaskId);
   const setExpandedTaskId = useSidebarStore((s) => s.setExpandedTaskId);
 
@@ -71,6 +74,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   const hasError = errorTaskIds.has(task.id);
   const isSelected = selectedTaskId === taskId;
   const isExpanded = expandedTaskId === taskId;
+  // Sprint G — row is part of a multi-selection but isn't the anchor.
+  // Styled distinctly (softer stripe + tinted bg) so the user can
+  // distinguish "cursor" from "also included".
+  const isInSelection =
+    (selectedTaskIds.has(taskId) || selectedTaskIds.has(task.id)) && !isSelected;
 
   // M16 — clear pending error timer on unmount to avoid setState on unmounted component
   useEffect(() => {
@@ -314,9 +322,20 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
 
   // ── Expand toggle ─────────────────────────────────────────────────────────
 
-  function handleRowClick() {
+  function handleRowClick(e: React.MouseEvent) {
+    // Sprint G — modifier-click semantics:
+    //   Shift+Click → range-extend: add this row to selection (doesn't open panel)
+    //   ⌘Click / Ctrl+Click → toggle this row in selection (doesn't open panel)
+    //   plain click → anchor + toggle detail panel (existing behavior)
+    if (e.shiftKey) {
+      addSelection(taskId);
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) {
+      toggleSelection(taskId);
+      return;
+    }
     setSelectedTaskId(taskId);
-    // Toggle inline-expand detail panel
     setExpandedTaskId(isExpanded ? null : taskId);
   }
 
@@ -355,6 +374,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     indent ? "task-row--indent" : "",
     hasError ? "task-row--error" : "",
     isSelected ? "task-row--selected" : "",
+    isInSelection ? "task-row--range-selected" : "",
     isEditing ? "task-row--editing" : "",
     isExpanded ? "task-row--expanded" : "",
     isInProgress ? "task-row--in-progress" : "",

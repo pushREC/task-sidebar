@@ -9,6 +9,8 @@ import { QuickAdd } from "./components/QuickAdd.js";
 import { SkeletonList } from "./components/SkeletonRow.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { OfflineCard } from "./components/OfflineCard.js";
+import { BulkBar } from "./components/BulkBar.js";
+import { UndoToast } from "./components/UndoToast.js";
 import { useKeyboardNav } from "./lib/keyboard.js";
 import { useTheme } from "./lib/theme.js";
 import type { ThemeChoice } from "./lib/theme.js";
@@ -84,10 +86,13 @@ export function App() {
   // most recent projects count WITHOUT re-binding the EventSource on every
   // store update. Previous impl depended on [loadVault, vault] which caused
   // a reconnect churn loop.
+  //
+  // Sprint F R2 (Gemini) — assign in render body for zero-lag read. A
+  // useEffect would commit AFTER render; if an SSE event fires between
+  // vault update and the effect commit, the callback would read a stale
+  // ref. Direct assignment is safe because refs are mutable by design.
   const vaultRef = useRef(vault);
-  useEffect(() => {
-    vaultRef.current = vault;
-  }, [vault]);
+  vaultRef.current = vault;
 
   // Sprint F E06 — first-launch onboarding card. Read once on mount; will
   // re-render on dismiss. Persists across reloads via localStorage.
@@ -433,6 +438,9 @@ export function App() {
         </div>
       )}
 
+      {/* Sprint G — BulkBar sits above QuickAdd when selection > 0 */}
+      {vault && <BulkBar projects={vault.projects} />}
+
       {vault && (
         <QuickAdd
           projects={vault.projects}
@@ -441,6 +449,9 @@ export function App() {
         />
       )}
       <CommandPalette />
+      {/* Sprint G — UndoToast portals to body; renders only when
+          pendingUndo is non-null. 5s self-dismiss + ⌘Z + click. */}
+      <UndoToast />
     </div>
   );
 }
