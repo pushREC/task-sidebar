@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Inbox } from "lucide-react";
 import type { Task, Project } from "../api.js";
 import { TaskRow } from "../components/TaskRow.js";
@@ -31,12 +31,17 @@ interface EnrichedTask extends Task {
 export function AgendaView({ projects }: AgendaViewProps) {
   const collapsedBuckets = useSidebarStore((s) => s.collapsedBuckets);
   const toggleBucketCollapsed = useSidebarStore((s) => s.toggleBucketCollapsed);
-  const selectedTaskId = useSidebarStore((s) => s.selectedTaskId);
 
-  // O-1 — single source of truth for "now" across this render. Passed to
-  // groupIntoBuckets (bucket classification) AND via TaskRow (relativeDue).
-  // Midnight race between two independent new Date() calls is eliminated.
-  const now = useMemo(() => new Date(), [projects]); // refreshes on vault updates
+  // O-1 + O1-N — single source of truth for "now" across this render.
+  // Refreshes on vault updates AND every 60s via a tick counter, so a
+  // long-running sidebar doesn't hold a stale midnight boundary.
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const now = useMemo(() => new Date(), [projects, nowTick]);
 
   // Flatten all eligible tasks with project metadata attached.
   const allTasks = useMemo<EnrichedTask[]>(() => {
@@ -73,18 +78,12 @@ export function AgendaView({ projects }: AgendaViewProps) {
   }
 
   return (
-    // H-2 — aria-activedescendant pattern: the agenda itself is the listbox,
-    // each row is an option with a stable id. j/k nav updates
-    // activedescendant without moving browser focus, which lets us keep the
-    // rest of the DOM's focus order intact (search inputs, tabs, etc.).
-    <div
-      className="agenda-view"
-      data-view="agenda"
-      role="listbox"
-      aria-label="Agenda"
-      aria-activedescendant={selectedTaskId ? `agenda-row-${selectedTaskId}` : undefined}
-      tabIndex={-1}
-    >
+    // Round-2 simplification: semantic role="list" with role="listitem"
+    // children. j/k keyboard nav is a VISUAL selection overlay, not an
+    // ARIA listbox. Screen readers navigate the list naturally via DOM
+    // order. This removes the tabIndex/activedescendant/hidden-target
+    // complexity that round-1's listbox pattern introduced.
+    <div className="agenda-view" data-view="agenda" role="list" aria-label="Agenda">
       {groups.map((group) => {
         const collapsed = collapsedBuckets.has(group.bucket);
         const panelId = `bucket-panel-${group.bucket}`;
@@ -108,11 +107,12 @@ export function AgendaView({ projects }: AgendaViewProps) {
               onToggle={() => toggleBucketCollapsed(group.bucket)}
             />
             {/* M-2 — bucket-body stays in the DOM when collapsed (hidden
-                attribute) so aria-controls on the header always resolves. */}
+                attribute) so aria-controls on the header always resolves.
+                role="group" dropped in round-2; the section itself is the
+                semantic grouping (aria-labelledby → header). */}
             <div
               id={panelId}
               className="bucket-body"
-              role="group"
               hidden={collapsed}
             >
               {group.tasks.length > 0 ? (

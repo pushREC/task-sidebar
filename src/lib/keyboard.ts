@@ -13,9 +13,25 @@ function isInputFocused(): boolean {
  * Query all visible task row ids in DOM order.
  * Used by j/k nav and for auto-select when jumping tabs.
  */
+/**
+ * C-R1 — exclude rows inside a `hidden` ancestor (collapsed bucket-body).
+ * Round-1 introduced the `hidden` attribute pattern (M-2) but this selector
+ * didn't update, letting keyboard nav land on invisible rows.
+ */
+function isHiddenByAncestor(el: HTMLElement): boolean {
+  let node: HTMLElement | null = el;
+  while (node) {
+    if (node.hidden) return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
 function getVisibleTaskIds(): string[] {
   const rows = document.querySelectorAll<HTMLElement>("[data-task-row]");
-  return Array.from(rows).map((el) => el.dataset.taskId ?? "");
+  return Array.from(rows)
+    .filter((el) => !isHiddenByAncestor(el))
+    .map((el) => el.dataset.taskId ?? "");
 }
 
 /**
@@ -35,14 +51,21 @@ function bucketOfRow(taskId: string): string | null {
   return sec?.dataset.bucket ?? null;
 }
 
-/** Task ids belonging to a specific bucket, in DOM order. */
+/** Task ids belonging to a specific bucket, in DOM order.
+ *  C-R1 — when the bucket-body is `hidden`, return [] so callers naturally
+ *  treat the bucket as empty-for-nav-purposes (matches round-1's skip-empty
+ *  semantics in jumpBucket). */
 function getTaskIdsInBucket(bucket: string): string[] {
   const sec = document.querySelector<HTMLElement>(
     `section[data-bucket="${bucket}"]`
   );
   if (!sec) return [];
+  const body = sec.querySelector<HTMLElement>(".bucket-body");
+  if (body?.hidden) return [];
   const rows = sec.querySelectorAll<HTMLElement>("[data-task-row]");
-  return Array.from(rows).map((el) => el.dataset.taskId ?? "");
+  return Array.from(rows)
+    .filter((el) => !isHiddenByAncestor(el))
+    .map((el) => el.dataset.taskId ?? "");
 }
 
 /** All bucket names currently rendered, in DOM order. */
@@ -154,28 +177,10 @@ export function useKeyboardNav(
         }
       }
 
-      // Tab / Shift+Tab — cross bucket boundary.
-      // H-1 — only hijack when the agenda itself owns focus. The listbox
-      // container on .agenda-view is tabIndex=-1 and holds "virtual" focus
-      // via aria-activedescendant. If any input/button/select elsewhere
-      // has focus, let the browser's natural Tab order work.
-      if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const ae = document.activeElement as HTMLElement | null;
-        const agendaOwnsFocus =
-          ae === null ||
-          ae === document.body ||
-          ae.closest<HTMLElement>(".agenda-view") !== null;
-        if (
-          state.activeTab === "agenda" &&
-          state.selectedTaskId &&
-          agendaOwnsFocus
-        ) {
-          e.preventDefault();
-          jumpBucket(e.shiftKey ? -1 : 1, navTimerRef);
-          return;
-        }
-        // Otherwise let the browser handle normal focus nav
-      }
+      // Round-2 — Tab hijack removed. `gj`/`gk` cover cross-bucket nav
+      // explicitly; Tab is now reserved for browser-native focus order
+      // (QuickAdd → tab strip → circle buttons → theme gear). This fixes
+      // the focus trap that Gemini round-2 flagged.
 
       // j / k — move selection within current bucket (D14 bucket-bounded)
       if (e.key === "j") {
@@ -238,7 +243,19 @@ export function useKeyboardNav(
     }
 
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      // C3-N — cancel any pending nav timers so they don't fire after
+      // unmount and try to mutate the unmounted store tree.
+      if (gTimerRef.current !== null) {
+        clearTimeout(gTimerRef.current);
+        gTimerRef.current = null;
+      }
+      if (navTimerRef.current !== null) {
+        clearTimeout(navTimerRef.current);
+        navTimerRef.current = null;
+      }
+    };
   }, [onFocusQuickAdd, onFocusSearch, onEnterEdit, onToggleSelected, onCycleTheme, onEnterExpand]);
 }
 

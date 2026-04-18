@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, FolderOpen } from "lucide-react";
 import type { Project } from "../api.js";
 import { TaskRow } from "../components/TaskRow.js";
@@ -26,6 +27,16 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
   const toggleProjectExpanded = useSidebarStore((s) => s.toggleProjectExpanded);
   const expandedProjectSlug = useSidebarStore((s) => s.expandedProjectSlug);
   const setExpandedProjectSlug = useSidebarStore((s) => s.setExpandedProjectSlug);
+
+  // C4-N — shared `now` with the same 60s refresh cadence as AgendaView
+  // so the due-chip overdue/today classes agree across views.
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const now = useMemo(() => new Date(), [projects, nowTick]);
 
   const activeProjects = projects
     .filter((p) => p.status === "active")
@@ -98,6 +109,7 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
                     tasksPath={project.tasksPath}
                     projects={projects}
                     indent
+                    now={now}
                   />
                 ))}
               </div>

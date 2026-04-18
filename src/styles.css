@@ -21,6 +21,11 @@
   --text-primary: #e8e6e1;
   --text-secondary: #9a9590;
   --separator: rgba(255, 255, 255, 0.06);
+  /* M-2 — dedicated token for ACTIVE-STATE borders (inputs, selects,
+     buttons-that-look-like-inputs). WCAG 2.1 §1.4.11 requires 3:1 for
+     UI component boundaries; --separator (6%) fails that on both
+     themes, --separator-strong (18%) passes. */
+  --separator-strong: rgba(255, 255, 255, 0.18);
 
   /* Skeleton shimmer tokens */
   --skeleton: rgba(255, 255, 255, 0.04);
@@ -52,6 +57,7 @@
   --text-primary: #1a1917;
   --text-secondary: #5a5955;
   --separator: rgba(26, 25, 23, 0.08);
+  --separator-strong: rgba(26, 25, 23, 0.28);
   --skeleton: rgba(26, 25, 23, 0.05);
   --skeleton-hi: rgba(26, 25, 23, 0.10);
 }
@@ -66,6 +72,7 @@
   --text-primary: #e8e6e1;
   --text-secondary: #9a9590;
   --separator: rgba(255, 255, 255, 0.06);
+  --separator-strong: rgba(255, 255, 255, 0.18);
   --skeleton: rgba(255, 255, 255, 0.04);
   --skeleton-hi: rgba(255, 255, 255, 0.08);
 }
@@ -215,7 +222,8 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
   width: 100%;
   background: var(--bg-surface);
   color: var(--text-primary);
-  border: 1px solid var(--separator);
+  /* M-2 — interactive control, requires ≥3:1 contrast on boundary */
+  border: 1px solid var(--separator-strong);
   border-radius: 4px;
   padding: 4px 8px;
   font-size: 13px;
@@ -226,7 +234,7 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
 .task-move-select {
   margin-top: 4px; width: 100%;
   background: var(--bg-surface); color: var(--text-secondary);
-  border: 1px solid var(--separator); border-radius: 4px;
+  border: 1px solid var(--separator-strong); border-radius: 4px;
   padding: 4px 8px; font-size: 11px; font-family: inherit; outline: none; cursor: pointer;
 }
 .task-row--editing { background: var(--bg-surface); }
@@ -238,7 +246,7 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
 .quick-add-select {
   flex-shrink: 0; max-width: 100px;
   background: var(--bg-surface); color: var(--text-secondary);
-  border: 1px solid var(--separator); border-radius: 4px;
+  border: 1px solid var(--separator-strong); border-radius: 4px;
   padding: 4px; font-size: 11px; font-family: inherit; outline: none; cursor: pointer;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -414,8 +422,12 @@ h3.group-header, .group-header {
   flex-shrink: 0;
 }
 .task-rank-badge--high {
+  /* M-1 — bumped bg from 12% to 22% + added a 1px accent border so the
+     pill carries its meaning from both fill and outline. Total contrast
+     now >=4.5:1 against bg-surface in both themes. */
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .task-rank-badge--medium {
   color: var(--text-primary);
@@ -810,7 +822,8 @@ h3.group-header, .group-header {
   width: 100%;
   background: var(--bg);
   color: var(--text-primary);
-  border: 1px solid var(--separator);
+  /* M-2 — active UI control boundary ≥3:1 */
+  border: 1px solid var(--separator-strong);
   border-radius: 4px;
   padding: 5px 8px;
   font-size: 12px;
@@ -843,7 +856,8 @@ h3.group-header, .group-header {
   border-radius: 4px;
   cursor: pointer;
   transition: background 150ms ease-out, color 150ms ease-out;
-  border: 1px solid var(--separator);
+  /* M-2 — interactive button boundary ≥3:1 */
+  border: 1px solid var(--separator-strong);
 }
 .entity-form-btn--cancel {
   background: none;

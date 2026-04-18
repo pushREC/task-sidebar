@@ -167,9 +167,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   // but those can disagree with local timezone near UTC boundaries. Trust
   // our local calculation here for visual consistency with the Agenda
   // bucket assignment.
+  // C-R2 — suppress the accent classes on done tasks so strikethrough +
+  // muted opacity don't fight a red "overdue" coloring. Done wins visually.
   let isOverdueLocal = false;
   let isDueTodayLocal = false;
-  if (task.due) {
+  if (task.due && !isDone) {
     const dueDate = parseISODate(task.due);
     if (dueDate) {
       const d = diffDays(nowStamp, dueDate);
@@ -250,10 +252,9 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
 
   return (
     <div
-      className={`task-row-wrapper${isExpanded ? " task-row-wrapper--expanded" : ""}`}
+      className={`task-row-wrapper${isExpanded ? " task-row-wrapper--expanded" : ""}${isSelected ? " task-row-wrapper--selected" : ""}`}
       data-task-wrapper
-      role="option"
-      aria-selected={isSelected}
+      role="listitem"
       id={`agenda-row-${taskId}`}
     >
       <div
@@ -312,8 +313,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
             {hasError && (
               <>
                 <span className="task-error-dot" title="Write failed" aria-hidden="true" />
-                {/* M-5 — screen-reader announcement for the write failure */}
-                <span role="alert" className="sr-only">Write failed.</span>
+                {/* M-5 — screen-reader announcement for the write failure.
+                    Round-2 M-4 — `aria-live="polite"` (not role=alert) so
+                    cascading failures don't storm AT users with assertive
+                    interruptions. Polite still queues each announcement. */}
+                <span aria-live="polite" className="sr-only">Write failed.</span>
               </>
             )}
           </div>
