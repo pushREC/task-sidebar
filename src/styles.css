@@ -1590,6 +1590,16 @@ button.prop-row:focus-visible {
   font-size: 12px;
 }
 
+.detail-breadcrumb__goal-plain {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: italic;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detail-breadcrumb__trash {
   display: inline-flex;
   align-items: center;

@@ -70,12 +70,12 @@ interface PropertyRowProps {
 }
 
 function PropertyRow({ label, children, editing, onClick, readOnly }: PropertyRowProps) {
-  // Sprint E — keyboard-accessible clickable rows: render as <button> so
-  // Tab can reach them and Enter/Space activates. Read-only rows stay
-  // <div> (no false focusable targets for AT).
+  // Sprint E + R1 NESTED-INTERACTIVE: clickable → <button> in display mode
+  // so Tab reaches and Enter/Space activates. In edit mode, render as
+  // <div> so the inner <select>/<input> is not nested inside a button.
   const clickable = onClick && !readOnly;
   const className = `prop-row${editing ? " prop-row--editing" : ""}${clickable ? " prop-row--clickable" : ""}`;
-  if (clickable) {
+  if (clickable && !editing) {
     return (
       <button
         type="button"

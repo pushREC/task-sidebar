@@ -77,12 +77,18 @@ export async function editTaskBody(
   const raw = await readFile(resolved, "utf8");
   const parsed = matter(raw);
 
-  // matter.stringify adds exactly one trailing newline after the frontmatter
-  // block. Ensure body has a leading blank line for readability, and trim
-  // trailing whitespace to keep the file clean across repeated edits.
-  const normalizedBody = "\n" + input.body.replace(/\s+$/g, "") + (input.body.length > 0 ? "\n" : "");
+  // R1 FINDING-4 — trim BEFORE length check so whitespace-only bodies
+  // (" ", "\n", "\t\n") don't oscillate between "\n\n" and "\n" across
+  // saves. Invariant now: empty trimmed → "" (no trailing); non-empty
+  // trimmed → "\n" + body + "\n" (stable on repeat saves).
+  const trimmed = input.body.trim();
+  const normalizedBody = trimmed.length === 0 ? "" : "\n" + trimmed + "\n";
 
-  const updated = matter.stringify(normalizedBody, parsed.data);
+  // R1 FINDING-5 — gray-matter's stringify output trailing-newline count
+  // is implementation-dependent; force exactly one trailing "\n" so
+  // repeated reads + writes are idempotent.
+  const stringified = matter.stringify(normalizedBody, parsed.data);
+  const updated = stringified.replace(/\n*$/, "\n");
   await writeFileAtomic(resolved, updated);
 
   return { entityPath: toRelative(resolved) };

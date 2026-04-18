@@ -84,7 +84,9 @@ export function ConfirmModal({
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  // Escape / backdrop click / focus trap.
+  // Escape + focus trap. Backdrop dismiss is handled by the overlay's
+  // onClick below (not document mousedown), so a drag that starts on the
+  // panel and releases outside can't accidentally trigger cancel.
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -97,9 +99,11 @@ export function ConfirmModal({
 
       const panel = panelRef.current;
       if (!panel) return;
+      // R1 MODAL-FOCUS-TRAP-SELECT — include <select> so future dialogs
+      // (e.g. "move task to project" confirm) still trap correctly.
       const focusables = Array.from(
         panel.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         )
       );
       if (focusables.length === 0) return;
@@ -121,24 +125,36 @@ export function ConfirmModal({
       }
     }
 
-    function handleMouseDown(e: MouseEvent) {
-      const panel = panelRef.current;
-      if (!panel) return;
-      if (!panel.contains(e.target as Node)) {
-        onCancel();
-      }
-    }
-
     document.addEventListener("keydown", handleKey, true);
-    document.addEventListener("mousedown", handleMouseDown);
     return () => {
       document.removeEventListener("keydown", handleKey, true);
-      document.removeEventListener("mousedown", handleMouseDown);
     };
   }, [onCancel]);
 
+  // R1 MODAL-BACKDROP-MOUSEDOWN-CANCEL — click-through safety: dismiss
+  // only when BOTH mousedown AND mouseup land on the overlay (not the
+  // panel). A drag that starts inside the panel and releases outside
+  // should not cancel. Tracked via a ref that captures the mousedown
+  // target; cleared on click regardless of target.
+  const mouseDownOnOverlayRef = useRef(false);
+  function handleOverlayMouseDown(e: React.MouseEvent) {
+    mouseDownOnOverlayRef.current = e.target === e.currentTarget;
+  }
+  function handleOverlayClick(e: React.MouseEvent) {
+    const originatedOnOverlay = mouseDownOnOverlayRef.current;
+    mouseDownOnOverlayRef.current = false;
+    if (originatedOnOverlay && e.target === e.currentTarget) {
+      onCancel();
+    }
+  }
+
   const node = (
-    <div className="confirm-modal-overlay" aria-hidden={false}>
+    <div
+      className="confirm-modal-overlay"
+      aria-hidden={false}
+      onMouseDown={handleOverlayMouseDown}
+      onClick={handleOverlayClick}
+    >
       <div
         ref={panelRef}
         className={`confirm-modal confirm-modal--${variant}`}
@@ -163,9 +179,11 @@ export function ConfirmModal({
             className={`confirm-modal__btn confirm-modal__btn--confirm confirm-modal__btn--${variant}`}
             disabled={!armed}
             onClick={onConfirm}
-            title={armed ? undefined : "Arming…"}
+            // R1 ARMING-VISUAL-CUE — "Arming…" in label while disabled so
+            // keyboard Enter users see why it didn't fire.
+            aria-label={armed ? confirmLabel : `${confirmLabel} (arming)`}
           >
-            {confirmLabel}
+            {armed ? confirmLabel : `${confirmLabel}…`}
           </button>
         </div>
       </div>

@@ -130,7 +130,13 @@ function PropertyRow({ label, children, editing, onClick, readOnly }: PropertyRo
   const clickable = onClick && !readOnly;
   const className = `prop-row${editing ? " prop-row--editing" : ""}${clickable ? " prop-row--clickable" : ""}`;
 
-  if (clickable) {
+  // R1 NESTED-INTERACTIVE — when editing=true, children render a live
+  // <select> / <input> / <textarea>. Nesting those inside a <button>
+  // violates WHATWG (button content must be phrasing, not interactive)
+  // and causes AT focus weirdness. Render as <div> during edit mode.
+  // Activation still works via click (container click bubbling) + Tab
+  // reaches the inner control directly.
+  if (clickable && !editing) {
     return (
       <button
         type="button"
@@ -644,17 +650,33 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
   async function handleDeleteConfirm() {
     setConfirmOpen(false);
     setDeleteError(null);
+
+    // R1 DELETE-UNMOUNT-TIMING — refetch BEFORE collapsing the panel so
+    // the ConfirmModal's focus-restore useEffect runs while the trash
+    // button (returnFocusRef target) is still in the DOM. The store
+    // update collapses the panel naturally when the refreshed task id
+    // no longer matches expandedTaskId.
+    //
+    // R1 INLINE-DELETE-LINE-SHIFT — for inline deletes we also clear
+    // expandedTaskId explicitly at the end, because the refetched vault
+    // might surface a DIFFERENT task at the same line number, which
+    // would mis-match the pinned id and cause a surprising stay-open.
+    async function collapseAfterRefetch() {
+      try {
+        const v = await fetchVault();
+        useSidebarStore.getState().setVault(v);
+      } catch {
+        // R1 FETCH-FAILURE-SILENT — surface a soft warning; delete
+        // succeeded but the UI may be stale until SSE catches up.
+        setDeleteError("Deleted. Vault refresh failed — will sync shortly.");
+      }
+      setExpandedTaskId(null);
+    }
+
     if (isEntityTask && task.entityPath) {
       const r = await deleteEntityTaskApi({ entityPath: task.entityPath });
       if (r.ok) {
-        setExpandedTaskId(null);
-        // Nudge the store immediately — SSE watcher will also fire, but
-        // an in-flight refetch keeps the UI consistent if watcher debounce
-        // is in its window.
-        try {
-          const v = await fetchVault();
-          useSidebarStore.getState().setVault(v);
-        } catch { /* SSE will catch up */ }
+        await collapseAfterRefetch();
       } else {
         setDeleteError(r.error);
       }
@@ -667,11 +689,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
         expectedAction: task.action,
       });
       if (r.ok) {
-        setExpandedTaskId(null);
-        try {
-          const v = await fetchVault();
-          useSidebarStore.getState().setVault(v);
-        } catch { /* SSE will catch up */ }
+        await collapseAfterRefetch();
       } else {
         setDeleteError(r.error);
       }
@@ -686,7 +704,14 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
   // V4B layout (picked in Sprint 0): goal line alone, project+trash line,
   // timestamps line. Timestamps only show for entity tasks (inline has
   // neither `created` nor a meaningful `modified`).
-  const hasGoal = typeof projectGoal === "string" && projectGoal.startsWith("[[");
+  //
+  // R1 NON-WIKILINK-GOAL — `projectGoal` may be a plain string if the
+  // README's `parent-goal` frontmatter was written without wikilink
+  // brackets. Show it as a muted string rather than hiding it entirely
+  // so the user isn't surprised by a missing breadcrumb line.
+  const hasGoalWikilink = typeof projectGoal === "string" && projectGoal.startsWith("[[");
+  const hasGoalString = typeof projectGoal === "string" && projectGoal.length > 0 && !hasGoalWikilink;
+  const hasGoal = hasGoalWikilink || hasGoalString;
   const hasProjectWikilink = typeof projectWikilink === "string" && projectWikilink.startsWith("[[");
   const hasTimestamps = isEntityTask && (task.created || task.modified);
 
@@ -703,7 +728,13 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
         <div className="detail-breadcrumb" aria-label="Task context">
           {hasGoal && projectGoal && (
             <div className="detail-breadcrumb__goal-line">
-              <WikilinkChip raw={projectGoal} />
+              {hasGoalWikilink ? (
+                <WikilinkChip raw={projectGoal} />
+              ) : (
+                <span className="detail-breadcrumb__goal-plain" title={projectGoal}>
+                  {projectGoal}
+                </span>
+              )}
             </div>
           )}
           <div className="detail-breadcrumb__project-line">
