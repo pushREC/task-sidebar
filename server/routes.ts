@@ -308,7 +308,9 @@ router.post("/tasks/delete-entity", async (req: Request, res: Response) => {
 
   try {
     const result = await deleteEntityTask({ entityPath });
-    res.json({ ok: true, entityPath: result.entityPath });
+    // Sprint H.3.3 — tombstoneId is optional (absent when file was
+    // already gone). Client uses it to POST /api/tasks/restore-tombstone.
+    res.json({ ok: true, entityPath: result.entityPath, tombstoneId: result.tombstoneId });
   } catch (err) {
     handleError(err, res);
   }
@@ -334,7 +336,13 @@ router.post("/tasks/delete-inline", async (req: Request, res: Response) => {
 
   try {
     const result = await deleteInlineTask({ tasksPath, line, expectedAction });
-    res.json({ ok: true, tasksPath: result.tasksPath, line: result.line });
+    // Sprint H.3.4 — tombstoneId surfaced for client undo.
+    res.json({
+      ok: true,
+      tasksPath: result.tasksPath,
+      line: result.line,
+      tombstoneId: result.tombstoneId,
+    });
   } catch (err) {
     handleError(err, res);
   }
