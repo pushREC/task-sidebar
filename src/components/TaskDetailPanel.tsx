@@ -629,7 +629,9 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
 
   const isEntityTask = task.source === "entity" && !!task.entityPath;
   const isInline = task.source === "inline";
-  const isDisabled = saveState === "saving";
+  // R3 DELETE-DOUBLE-SUBMIT (Gemini) — property rows also freeze during
+  // the delete flow; an in-flight delete must lock all edit affordances.
+  const isDisabled = saveState === "saving" || isDeleting;
 
   // Keyboard: Escape collapses panel, ⌘S closes panel.
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -654,6 +656,11 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
   async function handleDeleteConfirm() {
     setConfirmOpen(false);
     setDeleteError(null);
+    // R3 DELETE-DOUBLE-SUBMIT (Gemini) — lock the whole panel immediately
+    // so the trash button + property rows + Notes textarea are all
+    // disabled for the entire delete→refetch window. Unlock only if
+    // refetch fails (panel stays open with error visible).
+    setIsDeleting(true);
 
     // R1 DELETE-UNMOUNT-TIMING — refetch BEFORE collapsing the panel so
     // the ConfirmModal's focus-restore useEffect runs while the trash
@@ -665,7 +672,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
     // MOUNTED so the inline error is visible; only collapse on success.
 
     async function collapseAfterRefetch(): Promise<void> {
-      setIsDeleting(true);
+      // isDeleting was already set true at function entry — don't flip again.
       let refetchFailed = false;
       try {
         const v = await fetchVault();
@@ -691,6 +698,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
         await collapseAfterRefetch();
       } else {
         setDeleteError(r.error);
+        setIsDeleting(false);   // R3 — unlock on delete failure too
       }
       return;
     }
@@ -704,6 +712,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
         await collapseAfterRefetch();
       } else {
         setDeleteError(r.error);
+        setIsDeleting(false);   // R3 — unlock on delete failure too
       }
     }
   }
