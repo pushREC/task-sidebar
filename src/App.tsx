@@ -2,16 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings } from "lucide-react";
 import { fetchVault, subscribeVaultEvents } from "./api.js";
 import { useSidebarStore } from "./store.js";
-import { TodayView } from "./views/TodayView.js";
+import { AgendaView } from "./views/AgendaView.js";
 import { ProjectsView } from "./views/ProjectsView.js";
-import { AllTasksView } from "./views/AllTasksView.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { SkeletonList } from "./components/SkeletonRow.js";
 import { useKeyboardNav } from "./lib/keyboard.js";
 import { useTheme } from "./lib/theme.js";
 import type { ThemeChoice } from "./lib/theme.js";
 
-type Tab = "today" | "projects" | "tasks";
+// Sprint B D16 — tabs become Agenda + Projects only.
+type Tab = "agenda" | "projects";
 
 const DATE_LABEL = new Date().toLocaleDateString("en-US", {
   weekday: "short",
@@ -33,7 +33,6 @@ export function App() {
   const [showThemePopover, setShowThemePopover] = useState(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quickAddRef = useRef<HTMLInputElement | null>(null);
-  const searchRef = useRef<HTMLInputElement | null>(null);
 
   const vault = useSidebarStore((s) => s.vault);
   const setVault = useSidebarStore((s) => s.setVault);
@@ -104,10 +103,11 @@ export function App() {
     quickAddRef.current?.focus();
   }, []);
 
+  // Sprint B — search UI was on AllTasksView; Agenda has none in v1.
+  // Sprint D will wire `/` to focus the Command Palette search input.
   const handleFocusSearch = useCallback(() => {
-    setActiveTab("tasks");
-    setTimeout(() => searchRef.current?.focus(), 50);
-  }, [setActiveTab]);
+    // no-op until Sprint D
+  }, []);
 
   const handleEnterEdit = useCallback(() => {
     if (!selectedTaskId) return;
@@ -147,23 +147,28 @@ export function App() {
 
   // ── Derived values ────────────────────────────────────────────────────────
 
-  const todayCount = vault?.today.length ?? 0;
   const activeProjectCount =
     vault?.projects.filter((p) => p.status === "active").length ?? 0;
-  const openTaskCount =
-    vault?.projects.reduce(
-      (sum, p) => sum + p.tasks.filter((t) => !t.done).length,
-      0
-    ) ?? 0;
+  // Agenda total = open tasks across active/backlog/blocked/paused projects
+  const agendaCount =
+    vault?.projects.reduce((sum, p) => {
+      if (
+        p.status !== "active" &&
+        p.status !== "backlog" &&
+        p.status !== "blocked" &&
+        p.status !== "paused"
+      ) {
+        return sum;
+      }
+      return sum + p.tasks.filter((t) => !t.done && t.status !== "cancelled").length;
+    }, 0) ?? 0;
   const firstActiveSlug =
     vault?.projects.find((p) => p.status === "active")?.slug ?? "";
 
   const headerLabel =
     activeTab === "projects"
       ? `Projects · ${activeProjectCount} active`
-      : activeTab === "tasks"
-      ? `Tasks · ${openTaskCount} open`
-      : `Today · ${DATE_LABEL}`;
+      : `Agenda · ${DATE_LABEL}`;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -227,21 +232,21 @@ export function App() {
       {/* H14 — sr-only aria-live region: debounced so ≤2 announcements/second */}
       <span role="status" aria-live="polite" className="sr-only">{liveAnnouncement}</span>
 
-      {/* M22 — tablist + role="tab" with id + aria-controls linking to panels */}
+      {/* Sprint B D16 — Today tab killed. Tabs: Agenda + Projects. */}
       <div className="tab-strip" role="tablist">
         <button
-          id="tab-today"
-          className={`tab${activeTab === "today" ? " active" : ""}`}
-          onClick={() => setActiveTab("today" as Tab)}
-          data-tab="today"
+          id="tab-agenda"
+          className={`tab${activeTab === "agenda" ? " active" : ""}`}
+          onClick={() => setActiveTab("agenda" as Tab)}
+          data-tab="agenda"
           role="tab"
-          aria-selected={activeTab === "today"}
-          aria-controls="panel-today"
+          aria-selected={activeTab === "agenda"}
+          aria-controls="panel-agenda"
         >
-          Today
-          {todayCount > 0 && (
-            <span className="count-badge" data-today-count={todayCount}>
-              {todayCount}
+          Agenda
+          {agendaCount > 0 && (
+            <span className="count-badge" data-agenda-count={agendaCount}>
+              {agendaCount}
             </span>
           )}
         </button>
@@ -255,17 +260,9 @@ export function App() {
           aria-controls="panel-projects"
         >
           Projects
-        </button>
-        <button
-          id="tab-tasks"
-          className={`tab${activeTab === "tasks" ? " active" : ""}`}
-          onClick={() => setActiveTab("tasks" as Tab)}
-          data-tab="tasks"
-          role="tab"
-          aria-selected={activeTab === "tasks"}
-          aria-controls="panel-tasks"
-        >
-          Tasks
+          {activeProjectCount > 0 && (
+            <span className="count-badge">{activeProjectCount}</span>
+          )}
         </button>
       </div>
 
@@ -279,16 +276,16 @@ export function App() {
         <SkeletonList count={6} />
       )}
 
-      {/* M22 — each view wrapped in role="tabpanel" with aria-labelledby matching tab id */}
+      {/* Sprint B — Agenda + Projects tabpanels (Today + Tasks killed) */}
       {!error && vault && (
         <div
-          id="panel-today"
+          id="panel-agenda"
           role="tabpanel"
-          aria-labelledby="tab-today"
-          hidden={activeTab !== "today"}
+          aria-labelledby="tab-agenda"
+          hidden={activeTab !== "agenda"}
         >
-          {activeTab === "today" && (
-            <TodayView tasks={vault.today} projects={vault.projects} />
+          {activeTab === "agenda" && (
+            <AgendaView projects={vault.projects} />
           )}
         </div>
       )}
@@ -302,19 +299,6 @@ export function App() {
         >
           {activeTab === "projects" && (
             <ProjectsView projects={vault.projects} />
-          )}
-        </div>
-      )}
-
-      {!error && vault && (
-        <div
-          id="panel-tasks"
-          role="tabpanel"
-          aria-labelledby="tab-tasks"
-          hidden={activeTab !== "tasks"}
-        >
-          {activeTab === "tasks" && (
-            <AllTasksView projects={vault.projects} searchInputRef={searchRef} />
           )}
         </div>
       )}

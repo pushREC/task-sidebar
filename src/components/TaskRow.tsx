@@ -8,6 +8,7 @@ import {
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
 import { TaskDetailPanel } from "./TaskDetailPanel.js";
+import { relativeDue } from "../lib/format.js";
 
 interface TaskRowProps {
   task: Task;
@@ -149,6 +150,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // Sprint B state flags — V1A in-progress stripe, blocked, done strikethrough.
+  const isInProgress = task.status === "in-progress";
+  const isBlocked = task.status === "blocked";
+  const isDone = task.done || task.status === "done";
+
   const rowClasses = [
     "task-row",
     indent ? "task-row--indent" : "",
@@ -156,6 +162,9 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
     isSelected ? "task-row--selected" : "",
     isEditing ? "task-row--editing" : "",
     isExpanded ? "task-row--expanded" : "",
+    isInProgress ? "task-row--in-progress" : "",
+    isBlocked ? "task-row--blocked" : "",
+    isDone ? "task-row--done" : "",
   ].filter(Boolean).join(" ");
 
   if (isEditing) {
@@ -246,10 +255,25 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
         </button>
         <div className="task-content">
           {/* H12 — title attribute shows full text on truncation */}
-          <div className="task-title" title={task.action}>{task.action}</div>
+          <div className="task-title" title={task.action}>
+            {task.action}
+            {isBlocked && (
+              <span className="task-blocked-glyph" aria-label="Blocked" title="Blocked">
+                {" \u29D6"}
+              </span>
+            )}
+          </div>
           <div className="task-meta">
             {task.projectTitle && (
               <span className="task-project">{task.projectTitle}</span>
+            )}
+            {task.due && (
+              <span
+                className={`task-due${task.overdue ? " task-due--overdue" : task.dueToday ? " task-due--today" : ""}`}
+                title={task.due}
+              >
+                {relativeDue(task.due)}
+              </span>
             )}
             {task.priority && (
               <span
@@ -258,12 +282,6 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
               >
                 {RANK_LABEL[task.priority.rank] ?? task.priority.rank.charAt(0).toUpperCase()}
               </span>
-            )}
-            {task.overdue && (
-              <span className="task-overdue-chip">overdue</span>
-            )}
-            {!task.overdue && task.dueToday && (
-              <span className="task-due">due today</span>
             )}
             {hasError && <span className="task-error-dot" title="Write failed" />}
           </div>
