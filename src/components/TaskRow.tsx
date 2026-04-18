@@ -29,7 +29,11 @@ interface TaskRowProps {
   now?: Date;
 }
 
-const ERROR_DOT_DURATION_MS = 2000;
+// Sprint H.1 — 5s window (was 2s). Gives slow readers time to notice the
+// failure before auto-clear. Click-dismiss on the wrapping button
+// provides an explicit escape hatch. Hover surfaces the full error text
+// via a CSS tooltip (see .task-error-dot-button in styles.css).
+const ERROR_DOT_DURATION_MS = 5000;
 
 // Sprint C D19/V2B — rank → P1/P2/P3/P4 pill mapping.
 const RANK_PILL_LABEL: Record<string, string> = {
@@ -537,11 +541,29 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
             </button>
             {hasError && (
               <>
-                <span className="task-error-dot" title="Write failed" aria-hidden="true" />
-                {/* M-5 — screen-reader announcement for the write failure.
-                    Round-2 M-4 — `aria-live="polite"` (not role=alert) so
-                    cascading failures don't storm AT users with assertive
-                    interruptions. Polite still queues each announcement. */}
+                {/* Sprint H.1 — error indicator is a button so keyboard users
+                    can Tab to it and Enter/Space dismisses. Hover reveals the
+                    full error message via .task-error-dot-button[data-error-msg]
+                    CSS tooltip (see styles.css H.1 block). 5s auto-clear stays
+                    in place; click-dismiss is an additive explicit escape. */}
+                <button
+                  type="button"
+                  className="task-error-dot-button"
+                  aria-label="Write failed. Click to dismiss."
+                  data-error-msg="Write failed — check server response"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearTaskError(task.id);
+                    if (errorTimerRef.current !== null) {
+                      clearTimeout(errorTimerRef.current);
+                      errorTimerRef.current = null;
+                    }
+                  }}
+                >
+                  <span className="task-error-dot" aria-hidden="true" />
+                </button>
+                {/* M-5 — screen-reader announcement. aria-live="polite" so
+                    cascading failures don't storm AT users. */}
                 <span aria-live="polite" className="sr-only">Write failed.</span>
               </>
             )}

@@ -15,11 +15,15 @@
 - H.0.2 Entry-gate verification — COMPLETE
   - Expected: tsc 0 / verify.sh 39/39 / AI-tells clean / no stray #fff
   - Actual: all 4 PASS (see /tmp/plan-ii-h-entry-gate.txt); reconcile flake required server restart once
-- H.0.3 Create implementation-state.md — COMPLETE ← THIS FILE
-- H.0.4 Create PLAN-II-LOG.md — NOT STARTED
+- H.0.3 Create implementation-state.md — COMPLETE ← THIS FILE (commit 7955778)
+- H.0.4 Create PLAN-II-LOG.md — COMPLETE (commit 7955778)
 
 ### H.1 Error-dot persistence
-- H.1 Error-dot 5s + hover tooltip + click-dismiss — NOT STARTED
+- H.1 Error-dot 5s + hover tooltip + click-dismiss — IN PROGRESS
+  - ERROR_DOT_DURATION_MS: 2000 → 5000 (TaskRow.tsx)
+  - Wrapped .task-error-dot in a <button class="task-error-dot-button"> with onClick clearTaskError
+  - Added hover tooltip via `.task-error-dot-button:hover::after` reading `data-error-msg`
+  - Animation: `error-tooltip-in` 120ms ease-out 80ms delay
 
 ### H.2 mtime optimistic lock
 - H.2.1 Create server/writers/mtime-lock.ts — NOT STARTED
