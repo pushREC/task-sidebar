@@ -72,8 +72,23 @@ export const useSidebarStore = create<SidebarState>((set, get) => ({
     const { vault } = get();
     if (!vault) return;
 
-    const flipInList = <T extends { id: string; done: boolean }>(list: T[]): T[] =>
-      list.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t));
+    // B09 — flip both `done` and `status`. Only rewrite status for the simple
+    // open⇄done pair; leave `in-progress` / `blocked` / `cancelled` / `backlog`
+    // untouched so toggling a circle never silently overwrites a richer state.
+    const flipInList = <T extends { id: string; done: boolean; status?: string }>(
+      list: T[]
+    ): T[] =>
+      list.map((t) => {
+        if (t.id !== taskId) return t;
+        const nextDone = !t.done;
+        const nextStatus =
+          t.status === "open" || t.status === "done" || t.status === undefined
+            ? nextDone
+              ? "done"
+              : "open"
+            : t.status;
+        return { ...t, done: nextDone, status: nextStatus as typeof t.status };
+      });
 
     set({
       vault: {

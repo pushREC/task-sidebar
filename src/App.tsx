@@ -148,8 +148,22 @@ export function App() {
   // ── Derived values ────────────────────────────────────────────────────────
 
   const todayCount = vault?.today.length ?? 0;
+  const activeProjectCount =
+    vault?.projects.filter((p) => p.status === "active").length ?? 0;
+  const openTaskCount =
+    vault?.projects.reduce(
+      (sum, p) => sum + p.tasks.filter((t) => !t.done).length,
+      0
+    ) ?? 0;
   const firstActiveSlug =
     vault?.projects.find((p) => p.status === "active")?.slug ?? "";
+
+  const headerLabel =
+    activeTab === "projects"
+      ? `Projects · ${activeProjectCount} active`
+      : activeTab === "tasks"
+      ? `Tasks · ${openTaskCount} open`
+      : `Today · ${DATE_LABEL}`;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -157,7 +171,7 @@ export function App() {
     <div className="sidebar">
       <header className="header">
         <h1 className="header-title">
-          Today &middot; {DATE_LABEL}
+          {headerLabel}
           {/* H14 — sync dot is presentational; screen readers get the live region below */}
           {syncing && <span className="sync-dot" aria-hidden="true" />}
         </h1>

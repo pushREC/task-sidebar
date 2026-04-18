@@ -38,6 +38,13 @@ export async function addTask(input: AddTaskInput): Promise<AddTaskResult> {
     throw safetyError("slug contains illegal characters", 403);
   }
 
+  // B08 — reject tasks shorter than 3 chars. Keystroke dust from global
+  // shortcut bleed-through was creating single-letter tasks in the vault.
+  // 3 chars matches the minimum meaningful task verb ("fix", "buy", "pay").
+  if (typeof text !== "string" || text.trim().length < 3) {
+    throw safetyError("action must be at least 3 characters", 400);
+  }
+
   const cleanText = escapeTaskText(text);
   const tasksPath = join(VAULT_ROOT, "1-Projects", slug, "tasks.md");
 

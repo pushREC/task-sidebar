@@ -28,6 +28,14 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
     const trimmed = text.trim();
     if (!trimmed || !selectedSlug || submitting) return;
 
+    // B08 — client-side mirror of the server ≥3-char rule. Quietly no-ops
+    // on keystroke dust (single `j` or `a` that bleeds through the global
+    // shortcut handler) so users don't see a confusing server error.
+    if (trimmed.length < 3) {
+      setLastError("Task must be at least 3 characters.");
+      return;
+    }
+
     setSubmitting(true);
     setLastError(null);
 
@@ -39,7 +47,6 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
       setText("");
     } else {
       setLastError(result.error);
-      console.error("[quickadd] failed:", result.error);
     }
   }
 

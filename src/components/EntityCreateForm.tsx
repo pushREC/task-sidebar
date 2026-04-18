@@ -80,7 +80,6 @@ export function EntityCreateForm({
       onSuccess();
     } else {
       setLastError(result.error);
-      console.error("[entity-create] failed:", result.error);
     }
   }
 

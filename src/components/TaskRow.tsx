@@ -55,15 +55,19 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
   function handleToggleClick(e: React.MouseEvent) {
     e.stopPropagation();
     if (!tasksPath) return;
+    // B11 — entity tasks lack `line`; their toggle goes through status-edit,
+    // not the inline-line toggle endpoint. Fail closed until Sprint E wires
+    // a toggle→status-edit path for entities.
+    if (task.line === undefined) return;
+    const taskLine = task.line;
 
     const newDone = !task.done;
     optimisticToggle(task.id);
 
-    toggleTaskApi({ tasksPath, line: task.line, done: newDone }).then((result) => {
+    toggleTaskApi({ tasksPath, line: taskLine, done: newDone }).then((result) => {
       if (!result.ok) {
         optimisticToggle(task.id);
         showError();
-        console.error("[toggle] failed:", result.error);
       }
     });
   }
@@ -94,12 +98,13 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
 
   function commitEdit() {
     if (!tasksPath) { cancelEditing(); return; }
+    if (task.line === undefined) { cancelEditing(); return; }
+    const taskLine = task.line;
     const trimmed = editText.trim();
     if (!trimmed || trimmed === task.action) { cancelEditing(); return; }
 
-    editTaskApi({ tasksPath, line: task.line, newText: trimmed }).then((result) => {
+    editTaskApi({ tasksPath, line: taskLine, newText: trimmed }).then((result) => {
       if (!result.ok) {
-        console.error("[edit] failed:", result.error);
         showError();
       }
     });
@@ -116,11 +121,12 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
   function handleMoveChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const targetSlug = e.target.value;
     if (!targetSlug || !tasksPath) return;
+    if (task.line === undefined) return;
+    const taskLine = task.line;
 
-    moveTaskApi({ sourcePath: tasksPath, line: task.line, targetSlug }).then(
+    moveTaskApi({ sourcePath: tasksPath, line: taskLine, targetSlug }).then(
       (result) => {
         if (!result.ok) {
-          console.error("[move] failed:", result.error);
           showError();
         }
       }
@@ -137,17 +143,9 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
     setExpandedTaskId(isExpanded ? null : taskId);
   }
 
-  function handleRowKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      setSelectedTaskId(taskId);
-      setExpandedTaskId(isExpanded ? null : taskId);
-    }
-    if (e.key === "Escape" && isExpanded) {
-      e.preventDefault();
-      setExpandedTaskId(null);
-    }
-  }
+  // Note: Enter/Escape for row expand handled globally in useKeyboardNav
+  // via dispatched click events. No onKeyDown here so the row is NOT a
+  // focusable interactive ARIA control (see B04 comment in JSX).
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -230,12 +228,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
         {...(isFirst ? { "data-task-first": "" } : {})}
         onClick={handleRowClick}
         onDoubleClick={startEditing}
-        onKeyDown={handleRowKeyDown}
-        tabIndex={isSelected ? 0 : -1}
-        role="button"
-        aria-expanded={isExpanded}
       >
-        {/* H8 / M21 — button with aria-pressed + aria-label; padding gives ≥24×24 hit region */}
+        {/* B04 — circle is the only interactive control inside the row; the row
+            itself is a clickable region (no role="button") so we avoid
+            button-in-button ARIA nesting. Keyboard expand goes through
+            useKeyboardNav → Enter → dispatch click on the row. */}
         <button
           type="button"
           className={`task-circle${task.done ? " done" : ""}`}
@@ -254,9 +251,6 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
             {task.projectTitle && (
               <span className="task-project">{task.projectTitle}</span>
             )}
-            {!task.done && task.projectSlug && (
-              <span className="task-due">today</span>
-            )}
             {task.priority && (
               <span
                 className={`task-rank-badge task-rank-badge--${task.priority.rank}`}
@@ -270,9 +264,6 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
             )}
             {!task.overdue && task.dueToday && (
               <span className="task-due">due today</span>
-            )}
-            {task.source === "entity" && (
-              <span className="task-source-chip">entity</span>
             )}
             {hasError && <span className="task-error-dot" title="Write failed" />}
           </div>

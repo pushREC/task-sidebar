@@ -4,6 +4,7 @@ import {
   editTaskFieldApi,
   editTaskStatusApi,
   promoteAndEditTaskApi,
+  promoteTaskApi,
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
 
@@ -12,7 +13,7 @@ interface TaskDetailPanelProps {
   tasksPath?: string;
 }
 
-const STATUS_OPTIONS = ["backlog", "open", "in-progress", "blocked", "done"] as const;
+const STATUS_OPTIONS = ["backlog", "open", "in-progress", "blocked", "done", "cancelled"] as const;
 const OWNER_OPTIONS = ["human", "agent", "either"] as const;
 const ENERGY_OPTIONS = ["low", "medium", "high"] as const;
 const IMPACT_URGENCY_OPTIONS = ["very-high", "high", "medium", "low", "very-low"] as const;
@@ -418,6 +419,49 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
 
   const saveStatus = useCallback(
     async (status: string): Promise<void> => {
+      // B07 — inline task status change flows through two serial writes:
+      //   1. /api/tasks/promote → creates entity file (initial status
+      //      derived from the checkbox char).
+      //   2. /api/tasks/status-edit → transitions the new entity to the
+      //      user-picked status. This path is mandatory for status because
+      //      Lock #9 requires status to go through status-edit (so
+      //      status_reconcile.py fires on `→ done`). Using promote-and-edit
+      //      with field:"status" is explicitly rejected by the server.
+      if (isInline) {
+        if (!tasksPath || task.line === undefined) return;
+        setSaveState("saving");
+        const promoteResult = await promoteTaskApi({
+          sourcePath: tasksPath,
+          line: task.line,
+        });
+        if (!promoteResult.ok) {
+          setSaveState("error");
+          setTimeout(() => setSaveState("idle"), 2000);
+          return;
+        }
+        const newEntityPath = promoteResult.data.path;
+        if (!newEntityPath) {
+          // Promote returned ok but no path — shouldn't happen; treat as error
+          setSaveState("error");
+          setTimeout(() => setSaveState("idle"), 2000);
+          return;
+        }
+        const statusResult = await editTaskStatusApi({
+          entityPath: newEntityPath,
+          status,
+        });
+        if (statusResult.ok) {
+          setSaveState("idle");
+          onPromoted();
+        } else {
+          // Entity exists with initial status; user's picked status didn't
+          // land. Surface the error; panel will stay open so user can retry.
+          setSaveState("error");
+          setTimeout(() => setSaveState("idle"), 2000);
+        }
+        return;
+      }
+
       if (!task.entityPath) return;
       setSaveState("saving");
       const result = await editTaskStatusApi({ entityPath: task.entityPath, status });
@@ -428,7 +472,7 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    [task.entityPath]
+    [isInline, task.entityPath, task.line, tasksPath, onPromoted]
   );
 
   return { saveState, saveField, saveStatus };
@@ -506,17 +550,15 @@ export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
 
       {/* Property list */}
       <div className="prop-list">
-        {/* Status — entity only (inline tasks have no status yet) */}
-        {(isEntityTask || isInline) && (
-          <EditableSelect
-            label="Status"
-            value={task.status}
-            options={STATUS_OPTIONS}
-            placeholder="status"
-            readOnly={isDisabled || isInline}
-            onSave={(v) => void saveStatus(v)}
-          />
-        )}
+        {/* Status — B07: inline tasks auto-promote on status click */}
+        <EditableSelect
+          label="Status"
+          value={task.status}
+          options={STATUS_OPTIONS}
+          placeholder="status"
+          readOnly={isDisabled}
+          onSave={(v) => void saveStatus(v)}
+        />
 
         <EditableSelect
           label="Owner"

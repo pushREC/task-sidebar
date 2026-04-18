@@ -191,21 +191,14 @@ export async function fetchVault(): Promise<VaultResponse> {
  */
 export function subscribeVaultEvents(onChange: () => void): () => void {
   const source = new EventSource("/api/events");
-  let errorCount = 0;
 
   source.addEventListener("vault-changed", () => {
-    errorCount = 0; // reset on successful event
     onChange();
   });
 
-  source.addEventListener("error", () => {
-    errorCount += 1;
-    if (errorCount >= 3) {
-      console.error(
-        `[vault-sidebar] SSE reconnect attempt #${errorCount} — server may be restarting`
-      );
-    }
-  });
+  // A1 — no dev-log on SSE reconnect; Sprint F E02 will surface an offline
+  // banner by subscribing to readyState changes here. For now, the browser's
+  // built-in EventSource reconnect handles transient failures silently.
 
   return () => {
     source.close();

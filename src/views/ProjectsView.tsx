@@ -48,40 +48,34 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
         const openTasks = project.tasks.filter((t) => !t.done);
         const dueLabel = dueDaysLabel(project.due);
 
-        function handleHeaderClick() {
+        // B10 — split the single click into two intents:
+        //   chevron click → expand/collapse the task list (existing behavior)
+        //   header-body click → toggle the project detail panel
+        // Both have their own a11y: the chevron is a real <button>; the
+        // header body is a second <button>. No role="button" div wrapper.
+        function handleChevronClick(e: React.MouseEvent) {
+          e.stopPropagation();
           toggleProjectExpanded(project.slug);
-          // When expanding, also show detail panel; when collapsing, hide it
-          if (!isExpanded) {
-            setExpandedProjectSlug(project.slug);
-          } else {
-            setExpandedProjectSlug(null);
-          }
         }
-
-        function handleHeaderKeyDown(e: React.KeyboardEvent) {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleHeaderClick();
-          }
-          if (e.key === "Escape" && isDetailExpanded) {
-            e.preventDefault();
-            setExpandedProjectSlug(null);
-          }
+        function handleDetailToggle() {
+          setExpandedProjectSlug(isDetailExpanded ? null : project.slug);
         }
 
         return (
           <div key={project.slug} className="project-group" data-project-slug={project.slug}>
             <div
               className={`project-header${isDetailExpanded ? " project-header--detail-open" : ""}`}
-              role="button"
-              tabIndex={0}
-              onClick={handleHeaderClick}
-              onKeyDown={handleHeaderKeyDown}
-              aria-expanded={isExpanded}
+              onClick={handleDetailToggle}
             >
-              <span className={`project-caret${isExpanded ? " expanded" : ""}`}>
+              <button
+                type="button"
+                className={`project-caret${isExpanded ? " expanded" : ""}`}
+                onClick={handleChevronClick}
+                aria-expanded={isExpanded}
+                aria-label={isExpanded ? "Collapse tasks" : "Expand tasks"}
+              >
                 <ChevronRight size={12} strokeWidth={2} />
-              </span>
+              </button>
               <span className="project-title">{project.title}</span>
               {openTasks.length > 0 && (
                 <span className="count-badge">{openTasks.length}</span>

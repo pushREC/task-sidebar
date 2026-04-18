@@ -18,10 +18,14 @@ export function AllTasksView({ projects, searchInputRef }: AllTasksViewProps) {
 
   const grouped = activeProjects
     .map((project) => {
+      const projectMatches =
+        lowerQuery !== "" && project.title.toLowerCase().includes(lowerQuery);
       const openTasks = project.tasks.filter(
         (t) =>
           !t.done &&
-          (lowerQuery === "" || t.text.toLowerCase().includes(lowerQuery))
+          (lowerQuery === "" ||
+            projectMatches ||
+            t.action.toLowerCase().includes(lowerQuery))
       );
       return { project, openTasks };
     })
