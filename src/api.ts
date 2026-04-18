@@ -16,6 +16,10 @@ export interface Task {
   urgency?: "very-high" | "high" | "medium" | "low" | "very-low";
   blockedBy?: string[];
   parentProject?: string;
+  // Sprint E — timestamps + body (entity tasks only)
+  created?: string;
+  modified?: string;
+  body?: string;
   // P1-1 — server can return "critical" rank when score ≥250
   priority?: { score: number; rank: "critical" | "high" | "medium" | "low"; breakdown: Record<string, number> };
   overdue?: boolean;
@@ -165,6 +169,30 @@ export function promoteAndEditTaskApi(args: {
   value: string | number | null;
 }): Promise<ApiResult<PromoteAndEditResult>> {
   return postJson<PromoteAndEditResult>("/api/tasks/promote-and-edit", args);
+}
+
+export interface DeleteEntityResult { ok: boolean; entityPath?: string }
+export function deleteEntityTaskApi(args: {
+  entityPath: string;
+}): Promise<ApiResult<DeleteEntityResult>> {
+  return postJson<DeleteEntityResult>("/api/tasks/delete-entity", args);
+}
+
+export interface DeleteInlineResult { ok: boolean; tasksPath?: string; line?: number }
+export function deleteInlineTaskApi(args: {
+  tasksPath: string;
+  line: number;
+  expectedAction: string;
+}): Promise<ApiResult<DeleteInlineResult>> {
+  return postJson<DeleteInlineResult>("/api/tasks/delete-inline", args);
+}
+
+export interface BodyEditResult { ok: boolean; entityPath?: string }
+export function editTaskBodyApi(args: {
+  entityPath: string;
+  body: string;
+}): Promise<ApiResult<BodyEditResult>> {
+  return postJson<BodyEditResult>("/api/tasks/body-edit", args);
 }
 
 export interface ProjectFieldEditResult { ok: boolean }

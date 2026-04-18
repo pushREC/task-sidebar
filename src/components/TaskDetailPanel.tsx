@@ -1,16 +1,31 @@
-import { useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import type { Task } from "../api.js";
 import {
+  deleteEntityTaskApi,
+  deleteInlineTaskApi,
+  editTaskBodyApi,
   editTaskFieldApi,
   editTaskStatusApi,
+  fetchVault,
   promoteAndEditTaskApi,
   promoteTaskApi,
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
+import { ConfirmModal } from "./ConfirmModal.js";
+import { relativeAge } from "../lib/format.js";
 
 interface TaskDetailPanelProps {
   task: Task;
   tasksPath?: string;
+  /**
+   * Sprint E V4B — the parent project's `parent-goal` wikilink, passed in
+   * by the rendering row so the breadcrumb can show the goal without the
+   * detail panel needing a store selector for it.
+   */
+  projectGoal?: string;
+  /** Sprint E V4B — the project's own wikilink for the breadcrumb chip. */
+  projectWikilink?: string;
 }
 
 const STATUS_OPTIONS = ["backlog", "open", "in-progress", "blocked", "done", "cancelled"] as const;
@@ -22,17 +37,6 @@ type SaveState = "idle" | "saving" | "error";
 
 // ─── Wikilink chip helpers ────────────────────────────────────────────────────
 
-/**
- * Extracts a display name from a wikilink such as [[1-Projects/foo/README]]
- * or [[1-Projects/foo/FOO-README]].
- *
- * Rules (applied in order):
- *   1. Plain "README" or "README.md" → use the parent directory slug
- *   2. Segment ending in "-README" (e.g. "E2E-TEST-PROJECT-README") → strip suffix
- *   3. Anything else → use the last segment as-is
- *
- * Result is dashes-to-spaces + title-cased. Raw wikilink stays in title attr.
- */
 function extractWikilinkLabel(raw: string): string {
   const inner = raw.replace(/^\[\[/, "").replace(/\]\]$/, "");
   const segments = inner.split("/");
@@ -41,10 +45,8 @@ function extractWikilinkLabel(raw: string): string {
 
   let slug: string;
   if (lastLower === "readme" || lastLower === "readme.md") {
-    // Plain README → fall back to parent slug
     slug = segments[segments.length - 2] ?? last;
   } else if (last.toUpperCase().endsWith("-README")) {
-    // e.g. "E2E-TEST-PROJECT-README" → strip "-README"
     slug = last.slice(0, -"-README".length);
   } else {
     slug = last;
@@ -61,6 +63,7 @@ function WikilinkChip({ raw }: { raw: string }) {
     <span
       className="wikilink-chip"
       title={raw}
+      aria-label={`Wikilink: ${label}`}
       data-wikilink={raw}
     >
       {label}
@@ -106,6 +109,14 @@ function DueChip({ due, dueToday, overdue }: { due: string; dueToday?: boolean; 
 }
 
 // ─── Row layout ───────────────────────────────────────────────────────────────
+//
+// Gemini Sprint-C DETAIL-PANEL-KEYBOARD-INACCESSIBLE — PropertyRow is a
+// <button> when clickable, a <div> when read-only. Keyboard users can now
+// Tab to any editable row and hit Enter/Space to enter edit mode, matching
+// click affordance. Sr-only "Activate to edit" suffix on the a11y label.
+//
+// Non-clickable rows stay <div> because wrapping read-only content in a
+// button generates noise for screen readers and fake focus targets.
 
 interface PropertyRowProps {
   label: string;
@@ -116,11 +127,24 @@ interface PropertyRowProps {
 }
 
 function PropertyRow({ label, children, editing, onClick, readOnly }: PropertyRowProps) {
+  const clickable = onClick && !readOnly;
+  const className = `prop-row${editing ? " prop-row--editing" : ""}${clickable ? " prop-row--clickable" : ""}`;
+
+  if (clickable) {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onClick}
+        aria-label={`${label}. Activate to edit.`}
+      >
+        <span className="prop-label" aria-hidden="true">{label}</span>
+        <span className="prop-value">{children}</span>
+      </button>
+    );
+  }
   return (
-    <div
-      className={`prop-row${editing ? " prop-row--editing" : ""}${onClick && !readOnly ? " prop-row--clickable" : ""}`}
-      onClick={onClick && !readOnly ? onClick : undefined}
-    >
+    <div className={className}>
       <span className="prop-label">{label}</span>
       <span className="prop-value">{children}</span>
     </div>
@@ -140,6 +164,7 @@ interface EditableSelectProps {
 
 function EditableSelect({ label, value, options, placeholder, readOnly, onSave }: EditableSelectProps) {
   const [editing, setEditing] = useState(false);
+  const selectRef = useRef<HTMLSelectElement | null>(null);
 
   function handleRowClick() {
     if (!readOnly) setEditing(true);
@@ -162,12 +187,19 @@ function EditableSelect({ label, value, options, placeholder, readOnly, onSave }
     }
   }
 
+  // When entering edit mode, focus the native select so keyboard users land
+  // on the actual control (not the outer button, which loses focus on state
+  // change).
+  useEffect(() => {
+    if (editing) selectRef.current?.focus();
+  }, [editing]);
+
   return (
     <PropertyRow label={label} editing={editing} onClick={handleRowClick} readOnly={readOnly}>
       {editing ? (
         <select
+          ref={selectRef}
           className="prop-input prop-select"
-          autoFocus
           value={value ?? ""}
           aria-label={label}
           onChange={handleChange}
@@ -182,7 +214,7 @@ function EditableSelect({ label, value, options, placeholder, readOnly, onSave }
       ) : value ? (
         <span className="prop-text">{value}</span>
       ) : (
-        <span className="prop-placeholder" aria-label={`Set ${label}`}>+ set {placeholder ?? label}</span>
+        <span className="prop-placeholder">+ set {placeholder ?? label}</span>
       )}
     </PropertyRow>
   );
@@ -200,6 +232,7 @@ interface EditableTextProps {
 function EditableText({ label, value, placeholder, readOnly, multiline, onSave }: EditableTextProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   function handleRowClick() {
     if (!readOnly) {
@@ -227,13 +260,17 @@ function EditableText({ label, value, placeholder, readOnly, multiline, onSave }
     }
   }
 
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
   return (
     <PropertyRow label={label} editing={editing} onClick={handleRowClick} readOnly={readOnly}>
       {editing ? (
         multiline ? (
           <textarea
+            ref={inputRef as React.RefObject<HTMLTextAreaElement>}
             className="prop-input prop-textarea"
-            autoFocus
             value={draft}
             aria-label={label}
             rows={2}
@@ -243,9 +280,9 @@ function EditableText({ label, value, placeholder, readOnly, multiline, onSave }
           />
         ) : (
           <input
+            ref={inputRef as React.RefObject<HTMLInputElement>}
             type="text"
             className="prop-input"
-            autoFocus
             value={draft}
             aria-label={label}
             onChange={(e) => setDraft(e.target.value)}
@@ -256,7 +293,79 @@ function EditableText({ label, value, placeholder, readOnly, multiline, onSave }
       ) : value ? (
         <span className="prop-text">{value}</span>
       ) : (
-        <span className="prop-placeholder" aria-label={`Set ${label}`}>+ set {placeholder ?? label}</span>
+        <span className="prop-placeholder">+ set {placeholder ?? label}</span>
+      )}
+    </PropertyRow>
+  );
+}
+
+interface EditableTextAreaProps {
+  label: string;
+  value: string | undefined;
+  placeholder?: string;
+  readOnly?: boolean;
+  rows?: number;
+  onSave: (value: string) => void;
+}
+
+function EditableTextArea({ label, value, placeholder, readOnly, rows = 4, onSave }: EditableTextAreaProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  function handleRowClick() {
+    if (!readOnly) {
+      setDraft(value ?? "");
+      setEditing(true);
+    }
+  }
+
+  // Notes commit: allow empty-string (clearing notes is a valid action).
+  // Compared against `value ?? ""` to avoid spurious writes when the user
+  // opens the row and tabs away without typing.
+  function commitIfChanged() {
+    const trimmed = draft.replace(/\s+$/g, "");
+    const current = value ?? "";
+    if (trimmed !== current) {
+      onSave(trimmed);
+    }
+    setEditing(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      setDraft(value ?? "");
+      setEditing(false);
+    }
+    // ⌘Enter / Ctrl+Enter commits and closes — multi-line Enter inserts
+    // a newline (native textarea behavior).
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      commitIfChanged();
+    }
+  }
+
+  useEffect(() => {
+    if (editing) textareaRef.current?.focus();
+  }, [editing]);
+
+  return (
+    <PropertyRow label={label} editing={editing} onClick={handleRowClick} readOnly={readOnly}>
+      {editing ? (
+        <textarea
+          ref={textareaRef}
+          className="prop-input prop-textarea prop-textarea--notes"
+          value={draft}
+          aria-label={label}
+          rows={rows}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitIfChanged}
+          onKeyDown={handleKeyDown}
+        />
+      ) : value ? (
+        <span className="prop-text prop-text--multiline">{value}</span>
+      ) : (
+        <span className="prop-placeholder">+ set {placeholder ?? label}</span>
       )}
     </PropertyRow>
   );
@@ -272,6 +381,7 @@ interface EditableDateProps {
 
 function EditableDate({ label, value, placeholder, readOnly, onSave }: EditableDateProps) {
   const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   function handleRowClick() {
     if (!readOnly) setEditing(true);
@@ -292,13 +402,17 @@ function EditableDate({ label, value, placeholder, readOnly, onSave }: EditableD
     if (e.key === "Escape") setEditing(false);
   }
 
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
   return (
     <PropertyRow label={label} editing={editing} onClick={handleRowClick} readOnly={readOnly}>
       {editing ? (
         <input
+          ref={inputRef}
           type="date"
           className="prop-input prop-date"
-          autoFocus
           value={value ?? ""}
           aria-label={label}
           onChange={handleChange}
@@ -308,7 +422,7 @@ function EditableDate({ label, value, placeholder, readOnly, onSave }: EditableD
       ) : value ? (
         <span className="prop-text prop-text--mono">{value}</span>
       ) : (
-        <span className="prop-placeholder" aria-label={`Set ${label}`}>+ set {placeholder ?? label}</span>
+        <span className="prop-placeholder">+ set {placeholder ?? label}</span>
       )}
     </PropertyRow>
   );
@@ -326,6 +440,7 @@ interface EditableNumberProps {
 function EditableNumber({ label, value, placeholder, readOnly, min = 0, onSave }: EditableNumberProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value !== undefined ? String(value) : "");
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   function handleRowClick() {
     if (!readOnly) {
@@ -353,13 +468,17 @@ function EditableNumber({ label, value, placeholder, readOnly, min = 0, onSave }
     }
   }
 
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
   return (
     <PropertyRow label={label} editing={editing} onClick={handleRowClick} readOnly={readOnly}>
       {editing ? (
         <input
+          ref={inputRef}
           type="number"
           className="prop-input prop-number"
-          autoFocus
           value={draft}
           aria-label={label}
           min={min}
@@ -370,13 +489,13 @@ function EditableNumber({ label, value, placeholder, readOnly, min = 0, onSave }
       ) : value !== undefined ? (
         <span className="prop-text prop-text--mono">{value} min</span>
       ) : (
-        <span className="prop-placeholder" aria-label={`Set ${label}`}>+ set {placeholder ?? label}</span>
+        <span className="prop-placeholder">+ set {placeholder ?? label}</span>
       )}
     </PropertyRow>
   );
 }
 
-// ─── Save hook — handles both entity and inline (promote-and-edit) paths ─────
+// ─── Save hooks ───────────────────────────────────────────────────────────────
 
 function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () => void) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -385,7 +504,6 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
   const saveField = useCallback(
     async (field: string, value: string | number | null): Promise<void> => {
       if (isInline) {
-        // Inline task: must auto-promote first, then set field
         if (!tasksPath || task.line === undefined) return;
         setSaveState("saving");
         const result = await promoteAndEditTaskApi({
@@ -419,14 +537,7 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
 
   const saveStatus = useCallback(
     async (status: string): Promise<void> => {
-      // B07 — inline task status change flows through two serial writes:
-      //   1. /api/tasks/promote → creates entity file (initial status
-      //      derived from the checkbox char).
-      //   2. /api/tasks/status-edit → transitions the new entity to the
-      //      user-picked status. This path is mandatory for status because
-      //      Lock #9 requires status to go through status-edit (so
-      //      status_reconcile.py fires on `→ done`). Using promote-and-edit
-      //      with field:"status" is explicitly rejected by the server.
+      // B07 — inline task status change: two-step promote → status-edit.
       if (isInline) {
         if (!tasksPath || task.line === undefined) return;
         setSaveState("saving");
@@ -441,7 +552,6 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         }
         const newEntityPath = promoteResult.data.path;
         if (!newEntityPath) {
-          // Promote returned ok but no path — shouldn't happen; treat as error
           setSaveState("error");
           setTimeout(() => setSaveState("idle"), 2000);
           return;
@@ -454,8 +564,6 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
           setSaveState("idle");
           onPromoted();
         } else {
-          // Entity exists with initial status; user's picked status didn't
-          // land. Surface the error; panel will stay open so user can retry.
           setSaveState("error");
           setTimeout(() => setSaveState("idle"), 2000);
         }
@@ -475,27 +583,45 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
     [isInline, task.entityPath, task.line, tasksPath, onPromoted]
   );
 
-  return { saveState, saveField, saveStatus };
+  const saveBody = useCallback(
+    async (body: string): Promise<void> => {
+      // Body edits only exist for entity tasks. If the user is editing notes
+      // on an inline task, the UI doesn't surface the row — this is a guard.
+      if (!task.entityPath) return;
+      setSaveState("saving");
+      const result = await editTaskBodyApi({ entityPath: task.entityPath, body });
+      if (result.ok) {
+        setSaveState("idle");
+      } else {
+        setSaveState("error");
+        setTimeout(() => setSaveState("idle"), 2000);
+      }
+    },
+    [task.entityPath]
+  );
+
+  return { saveState, saveField, saveStatus, saveBody };
 }
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink }: TaskDetailPanelProps) {
   const setExpandedTaskId = useSidebarStore((s) => s.setExpandedTaskId);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // When an inline task is promoted, collapse the panel — vault watcher will refetch
   const handlePromoted = useCallback(() => {
     setExpandedTaskId(null);
   }, [setExpandedTaskId]);
 
-  const { saveState, saveField, saveStatus } = useSaveField(task, tasksPath, handlePromoted);
+  const { saveState, saveField, saveStatus, saveBody } = useSaveField(task, tasksPath, handlePromoted);
 
   const isEntityTask = task.source === "entity" && !!task.entityPath;
   const isInline = task.source === "inline";
   const isDisabled = saveState === "saving";
 
-  // Keyboard: Escape collapses panel, ⌘S closes panel
+  // Keyboard: Escape collapses panel, ⌘S closes panel.
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -508,9 +634,61 @@ export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
     }
   }
 
+  // ── Delete flow ───────────────────────────────────────────────────────────
+  //
+  // Opens ConfirmModal; on confirm, dispatches to entity or inline endpoint
+  // based on task.source. Success collapses the panel (SSE refresh catches
+  // the file-system change milliseconds later). Failure shows an inline
+  // error row with the server message.
+
+  async function handleDeleteConfirm() {
+    setConfirmOpen(false);
+    setDeleteError(null);
+    if (isEntityTask && task.entityPath) {
+      const r = await deleteEntityTaskApi({ entityPath: task.entityPath });
+      if (r.ok) {
+        setExpandedTaskId(null);
+        // Nudge the store immediately — SSE watcher will also fire, but
+        // an in-flight refetch keeps the UI consistent if watcher debounce
+        // is in its window.
+        try {
+          const v = await fetchVault();
+          useSidebarStore.getState().setVault(v);
+        } catch { /* SSE will catch up */ }
+      } else {
+        setDeleteError(r.error);
+      }
+      return;
+    }
+    if (isInline && tasksPath && task.line !== undefined) {
+      const r = await deleteInlineTaskApi({
+        tasksPath,
+        line: task.line,
+        expectedAction: task.action,
+      });
+      if (r.ok) {
+        setExpandedTaskId(null);
+        try {
+          const v = await fetchVault();
+          useSidebarStore.getState().setVault(v);
+        } catch { /* SSE will catch up */ }
+      } else {
+        setDeleteError(r.error);
+      }
+    }
+  }
+
   const panelClass = `task-detail-panel${isInline ? " task-detail-panel--inline" : ""}${
     saveState === "error" ? " task-detail-panel--error" : ""
   }`;
+
+  // ── Breadcrumb pieces ─────────────────────────────────────────────────────
+  // V4B layout (picked in Sprint 0): goal line alone, project+trash line,
+  // timestamps line. Timestamps only show for entity tasks (inline has
+  // neither `created` nor a meaningful `modified`).
+  const hasGoal = typeof projectGoal === "string" && projectGoal.startsWith("[[");
+  const hasProjectWikilink = typeof projectWikilink === "string" && projectWikilink.startsWith("[[");
+  const hasTimestamps = isEntityTask && (task.created || task.modified);
 
   return (
     <div
@@ -520,7 +698,44 @@ export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
       role="region"
       aria-label={`Details for: ${task.action}`}
     >
-      {/* Action row — always visible at top, editable for entity tasks */}
+      {/* ── V4B breadcrumb ─────────────────────────────────────────────── */}
+      {(hasGoal || hasProjectWikilink || hasTimestamps) && (
+        <div className="detail-breadcrumb" aria-label="Task context">
+          {hasGoal && projectGoal && (
+            <div className="detail-breadcrumb__goal-line">
+              <WikilinkChip raw={projectGoal} />
+            </div>
+          )}
+          <div className="detail-breadcrumb__project-line">
+            {hasProjectWikilink && projectWikilink ? (
+              <WikilinkChip raw={projectWikilink} />
+            ) : task.parentProject ? (
+              <WikilinkChip raw={task.parentProject} />
+            ) : (
+              <span className="detail-breadcrumb__no-project">—</span>
+            )}
+            <button
+              type="button"
+              className="detail-breadcrumb__trash"
+              onClick={() => setConfirmOpen(true)}
+              title="Delete task"
+              aria-label="Delete task"
+              disabled={isDisabled}
+            >
+              <Trash2 size={14} strokeWidth={1.5} />
+            </button>
+          </div>
+          {hasTimestamps && (
+            <div className="detail-breadcrumb__timestamps">
+              {task.created && <span>created {relativeAge(task.created)}</span>}
+              {task.created && task.modified && <span aria-hidden="true"> · </span>}
+              {task.modified && <span>modified {relativeAge(task.modified)}</span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Action row */}
       {isEntityTask ? (
         <EditableText
           label="Action"
@@ -534,7 +749,7 @@ export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
         </PropertyRow>
       )}
 
-      {/* Priority + due row — shown inline under action */}
+      {/* Priority + due row */}
       {(task.priority || task.due) && (
         <div className="prop-meta-row">
           {task.priority && <RankChip rank={task.priority.rank} />}
@@ -550,7 +765,6 @@ export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
 
       {/* Property list */}
       <div className="prop-list">
-        {/* Status — B07: inline tasks auto-promote on status click */}
         <EditableSelect
           label="Status"
           value={task.status}
@@ -613,7 +827,6 @@ export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
           onSave={(v) => void saveField("urgency", v)}
         />
 
-        {/* Blocked-by — wikilink chips if populated, else editable text */}
         {task.blockedBy && task.blockedBy.length > 0 ? (
           <PropertyRow label="Blocked by" readOnly>
             <span className="prop-chips">
@@ -632,14 +845,24 @@ export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
           />
         )}
 
-        {/* Parent project — read-only wikilink chip */}
-        {task.parentProject && (
+        {/* Sprint E — Notes row (entity tasks only). Inline tasks have no
+            body concept; hiding the row avoids an impossible affordance. */}
+        {isEntityTask && (
+          <EditableTextArea
+            label="Notes"
+            value={task.body ?? ""}
+            placeholder="notes"
+            readOnly={isDisabled}
+            onSave={(v) => void saveBody(v)}
+          />
+        )}
+
+        {task.parentProject && !hasProjectWikilink && (
           <PropertyRow label="Project" readOnly>
             <WikilinkChip raw={task.parentProject} />
           </PropertyRow>
         )}
 
-        {/* Source badge */}
         {isInline && (
           <PropertyRow label="Type" readOnly>
             <span className="prop-badge">inline</span>
@@ -651,6 +874,27 @@ export function TaskDetailPanel({ task, tasksPath }: TaskDetailPanelProps) {
         <div className="prop-error-row" role="alert">
           Write failed — check server.
         </div>
+      )}
+
+      {deleteError && (
+        <div className="prop-error-row" role="alert">
+          Delete failed: {deleteError}
+        </div>
+      )}
+
+      {confirmOpen && (
+        <ConfirmModal
+          title="Delete task?"
+          body={
+            isEntityTask && task.entityPath
+              ? `Removes ${task.entityPath}. This cannot be undone.`
+              : `Removes this task from ${tasksPath ?? "tasks.md"}. This cannot be undone.`
+          }
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={() => void handleDeleteConfirm()}
+          onCancel={() => setConfirmOpen(false)}
+        />
       )}
     </div>
   );

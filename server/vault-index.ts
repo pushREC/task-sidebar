@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, statSync } from "fs";
 import { join, dirname, basename } from "path";
 import glob from "fast-glob";
 import matter from "gray-matter";
@@ -37,6 +37,18 @@ export interface Task {
   urgency?: "very-high" | "high" | "medium" | "low" | "very-low";
   blockedBy?: string[];          // wikilinks
   parentProject?: string;        // wikilink or derived from path
+  // Sprint E — timestamps for V4B breadcrumb (entity tasks only).
+  // `created` comes from frontmatter (ISO date/datetime string as written
+  // by life-os templates); `modified` is fs.stat().mtime as ISO string.
+  // Inline tasks have neither — they have no frontmatter and their mtime
+  // would be tasks.md's mtime, which doesn't semantically map to the row.
+  created?: string;
+  modified?: string;
+  // Sprint E — entity task body (markdown after frontmatter) for the
+  // Notes row in the detail panel. Only populated for entity tasks;
+  // undefined for inline (no body concept). Server returns the trimmed
+  // body so the client doesn't have to decide where "content" starts.
+  body?: string;
   // Computed:
   priority?: PriorityResult;
   overdue?: boolean;
@@ -134,7 +146,7 @@ async function parseEntityTasks(
   for (const entityFile of entityFiles) {
     try {
       const raw = readFileSync(entityFile, "utf8");
-      const { data } = matter(raw);
+      const { data, content } = matter(raw);
 
       const action = typeof data.action === "string" ? data.action.trim() : basename(entityFile, ".md");
       const rawStatus = typeof data.status === "string" ? data.status.toLowerCase() : "open";
@@ -167,6 +179,28 @@ async function parseEntityTasks(
       const entityPath = toRelativePath(entityFile);
       const taskSlug = basename(entityFile, ".md");
 
+      // Sprint E — surface created (frontmatter) + modified (mtime) for V4B
+      // breadcrumb timestamps. `created` is normalized to a trimmed string
+      // so `created: 2026-04-01` and `created: "2026-04-01T..."` both flow
+      // through; the client stays forgiving about format.
+      let createdStr: string | undefined;
+      if (typeof data.created === "string" && data.created.trim()) {
+        createdStr = data.created.trim();
+      } else if (data.created instanceof Date) {
+        createdStr = data.created.toISOString();
+      }
+      let modifiedStr: string | undefined;
+      try {
+        modifiedStr = statSync(entityFile).mtime.toISOString();
+      } catch {
+        modifiedStr = undefined;
+      }
+
+      // Sprint E — entity body is everything after frontmatter, trimmed.
+      // Empty body is represented as `""` so the Notes row renders the
+      // "+ set notes" placeholder (vs. undefined which would hide the row).
+      const bodyStr = typeof content === "string" ? content.replace(/^\n+/, "").trimEnd() : "";
+
       const task: Task = {
         id: `${projectSlug}:entity:${taskSlug}`,
         source: "entity",
@@ -183,6 +217,9 @@ async function parseEntityTasks(
         blockedBy,
         parentProject:
           typeof data["parent-project"] === "string" ? data["parent-project"] : `[[1-Projects/${projectSlug}/README]]`,
+        created: createdStr,
+        modified: modifiedStr,
+        body: bodyStr,
         overdue,
         dueToday,
         upcoming,

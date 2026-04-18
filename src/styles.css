@@ -1535,6 +1535,219 @@ button.task-due:focus-visible {
   margin-right: 4px;
 }
 
+/* ─── Sprint E — Detail panel depth + full CRUD ────────────────────────── */
+
+/* Button-wrapper reset — PropertyRow renders as <button> when clickable so
+ * Tab reaches it + Enter/Space activate. Reset native button paint to
+ * match the original <div> layout exactly. */
+button.prop-row {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  border: none;              /* grid-template + our left-border stays */
+  border-left: 2px solid transparent;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  cursor: pointer;
+}
+button.prop-row:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1px;
+  border-left-color: var(--accent);
+}
+
+/* ── V4B breadcrumb (Sprint 0 picked: 2-line stacked) ─────────────────── */
+
+.detail-breadcrumb {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 4px 8px 14px;
+  margin: 0 -16px 4px;        /* negative margin matches prop-row bleed */
+  border-bottom: 1px solid var(--separator);
+}
+
+.detail-breadcrumb__goal-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.detail-breadcrumb__project-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.detail-breadcrumb__no-project {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.detail-breadcrumb__trash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 150ms ease-out, border-color 150ms ease-out, background 150ms ease-out;
+}
+.detail-breadcrumb__trash:hover:not([disabled]) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.detail-breadcrumb__trash:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+.detail-breadcrumb__trash[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.detail-breadcrumb__timestamps {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Multi-line prop-text for Notes display ─────────────────────────── */
+
+.prop-text--multiline {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.45;
+}
+
+/* ── Larger textarea variant for Notes ──────────────────────────────── */
+
+.prop-textarea--notes {
+  min-height: 72px;
+  line-height: 1.45;
+  font-family: var(--font-sans);
+}
+
+/* ── Delete error row — same accent posture as .prop-error-row but
+ *    dedicated class keeps the two styles independently tunable. ───── */
+
+/* (Covered by existing .prop-error-row; TaskDetailPanel reuses it.) */
+
+/* ── Confirm modal (destructive action) ─────────────────────────────── */
+
+.confirm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.56);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: confirm-fade-in 120ms ease-out;
+}
+
+@keyframes confirm-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.confirm-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--separator-strong);
+  border-radius: 6px;
+  padding: 16px 16px 12px;
+  width: min(360px, calc(100vw - 32px));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  animation: confirm-scale-in 140ms cubic-bezier(0.25, 0.9, 0.35, 1.1);
+}
+
+@keyframes confirm-scale-in {
+  from { transform: scale(0.96); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+.confirm-modal__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+
+.confirm-modal__body {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0 0 14px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.confirm-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-modal__btn {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
+}
+
+.confirm-modal__btn--cancel {
+  background: transparent;
+  border: 1px solid var(--separator-strong);
+  color: var(--text-primary);
+}
+.confirm-modal__btn--cancel:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-secondary);
+}
+.confirm-modal__btn--cancel:focus-visible {
+  outline: 1.5px solid var(--text-secondary);
+  outline-offset: 1px;
+}
+
+.confirm-modal__btn--confirm {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  font-weight: 500;
+}
+.confirm-modal__btn--confirm:hover:not([disabled]) {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+}
+.confirm-modal__btn--confirm:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+.confirm-modal__btn--confirm[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Reduced motion (must be last) */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

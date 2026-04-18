@@ -70,11 +70,26 @@ interface PropertyRowProps {
 }
 
 function PropertyRow({ label, children, editing, onClick, readOnly }: PropertyRowProps) {
+  // Sprint E — keyboard-accessible clickable rows: render as <button> so
+  // Tab can reach them and Enter/Space activates. Read-only rows stay
+  // <div> (no false focusable targets for AT).
+  const clickable = onClick && !readOnly;
+  const className = `prop-row${editing ? " prop-row--editing" : ""}${clickable ? " prop-row--clickable" : ""}`;
+  if (clickable) {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onClick}
+        aria-label={`${label}. Activate to edit.`}
+      >
+        <span className="prop-label" aria-hidden="true">{label}</span>
+        <span className="prop-value">{children}</span>
+      </button>
+    );
+  }
   return (
-    <div
-      className={`prop-row${editing ? " prop-row--editing" : ""}${onClick && !readOnly ? " prop-row--clickable" : ""}`}
-      onClick={onClick && !readOnly ? onClick : undefined}
-    >
+    <div className={className}>
       <span className="prop-label">{label}</span>
       <span className="prop-value">{children}</span>
     </div>

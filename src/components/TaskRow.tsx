@@ -536,7 +536,20 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
         />
       )}
       {isExpanded && (
-        <TaskDetailPanel task={task} tasksPath={tasksPath} />
+        <TaskDetailPanel
+          task={task}
+          tasksPath={tasksPath}
+          projectGoal={
+            projects && task.projectSlug
+              ? projects.find((p) => p.slug === task.projectSlug)?.parentGoal
+              : projects && task.parentProject
+              ? projects.find((p) =>
+                  task.parentProject?.includes(`1-Projects/${p.slug}/`)
+                )?.parentGoal
+              : undefined
+          }
+          projectWikilink={task.parentProject}
+        />
       )}
     </div>
   );

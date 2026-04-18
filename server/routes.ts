@@ -10,6 +10,8 @@ import { createEntityTask } from "./writers/task-create-entity.js";
 import { promoteTask } from "./writers/task-promote.js";
 import { promoteAndEditTask } from "./writers/task-promote-and-edit.js";
 import { editProjectField } from "./writers/project-field-edit.js";
+import { deleteEntityTask, deleteInlineTask } from "./writers/task-delete.js";
+import { editTaskBody } from "./writers/task-body-edit.js";
 import type { SafetyError } from "./safety.js";
 
 const router: ExpressRouter = Router();
@@ -272,6 +274,72 @@ router.post("/tasks/promote-and-edit", async (req: Request, res: Response) => {
   try {
     const result = await promoteAndEditTask({ tasksPath, line, field, value });
     res.json({ ok: true, entityPath: result.entityPath, taskSlug: result.taskSlug });
+  } catch (err) {
+    handleError(err, res);
+  }
+});
+
+// ─── POST /api/tasks/delete-entity ───────────────────────────────────────────
+
+router.post("/tasks/delete-entity", async (req: Request, res: Response) => {
+  const { entityPath } = req.body as Record<string, unknown>;
+
+  if (typeof entityPath !== "string") {
+    res.status(400).json({ ok: false, error: "entityPath must be a string" });
+    return;
+  }
+
+  try {
+    const result = await deleteEntityTask({ entityPath });
+    res.json({ ok: true, entityPath: result.entityPath });
+  } catch (err) {
+    handleError(err, res);
+  }
+});
+
+// ─── POST /api/tasks/delete-inline ───────────────────────────────────────────
+
+router.post("/tasks/delete-inline", async (req: Request, res: Response) => {
+  const { tasksPath, line, expectedAction } = req.body as Record<string, unknown>;
+
+  if (typeof tasksPath !== "string") {
+    res.status(400).json({ ok: false, error: "tasksPath must be a string" });
+    return;
+  }
+  if (typeof line !== "number") {
+    res.status(400).json({ ok: false, error: "line must be a number" });
+    return;
+  }
+  if (typeof expectedAction !== "string") {
+    res.status(400).json({ ok: false, error: "expectedAction must be a string" });
+    return;
+  }
+
+  try {
+    const result = await deleteInlineTask({ tasksPath, line, expectedAction });
+    res.json({ ok: true, tasksPath: result.tasksPath, line: result.line });
+  } catch (err) {
+    handleError(err, res);
+  }
+});
+
+// ─── POST /api/tasks/body-edit ───────────────────────────────────────────────
+
+router.post("/tasks/body-edit", async (req: Request, res: Response) => {
+  const { entityPath, body } = req.body as Record<string, unknown>;
+
+  if (typeof entityPath !== "string") {
+    res.status(400).json({ ok: false, error: "entityPath must be a string" });
+    return;
+  }
+  if (typeof body !== "string") {
+    res.status(400).json({ ok: false, error: "body must be a string" });
+    return;
+  }
+
+  try {
+    const result = await editTaskBody({ entityPath, body });
+    res.json({ ok: true, entityPath: result.entityPath });
   } catch (err) {
     handleError(err, res);
   }
