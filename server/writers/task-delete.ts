@@ -1,7 +1,8 @@
-import { readFile, unlink } from "fs/promises";
+import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
+import { moveToTombstone, moveInlineToTombstone } from "./task-tombstone.js";
 
 /**
  * Task deletion — two shapes:
@@ -36,7 +37,8 @@ export interface TaskDeleteEntityInput {
 }
 
 export interface TaskDeleteEntityResult {
-  entityPath: string;   // vault-relative (what we deleted)
+  entityPath: string;      // vault-relative (what we deleted)
+  tombstoneId?: string;    // Sprint H.3.3 — set when a tombstone was created
 }
 
 export async function deleteEntityTask(
@@ -64,17 +66,20 @@ export async function deleteEntityTask(
     return { entityPath: toRelative(resolved) };
   }
 
+  // Sprint H.3.3 — replace hard unlink with tombstone rename. The
+  // tombstone sweeper (server/index.ts) deletes the file ~5s later
+  // if no restore came in. moveToTombstone throws on fs.rename error;
+  // ENOENT races are handled by the sweeper's existsSync guard.
   try {
-    await unlink(resolved);
+    const { tombstoneId } = await moveToTombstone(resolved);
+    return { entityPath: toRelative(resolved), tombstoneId };
   } catch (err) {
-    // ENOENT slipped through the existsSync check → still idempotent-success.
     if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "ENOENT") {
+      // Beat to the unlink by a concurrent SSE-triggered change.
       return { entityPath: toRelative(resolved) };
     }
     throw err;
   }
-
-  return { entityPath: toRelative(resolved) };
 }
 
 // ─── Inline delete ──────────────────────────────────────────────────────────
@@ -96,8 +101,9 @@ export interface TaskDeleteInlineInput {
 }
 
 export interface TaskDeleteInlineResult {
-  tasksPath: string;    // vault-relative
-  line: number;         // line we deleted
+  tasksPath: string;      // vault-relative
+  line: number;           // line we deleted
+  tombstoneId?: string;   // Sprint H.3.4 — set when a tombstone was created
 }
 
 const OWNER_RE = /@owner\((human|agent|either)\)/;
@@ -154,6 +160,17 @@ export async function deleteInlineTask(
     );
   }
 
+  // Sprint H.3.4 — BEFORE removing the line, write a tombstone marker
+  // that records exactly which line was removed + its full text.
+  // restoreFromTombstone reads the filename-encoded metadata and
+  // splices the text back in. If the tombstone write fails, we
+  // propagate — no partial state (line stays in file).
+  const { tombstoneId } = await moveInlineToTombstone({
+    tasksPath: resolved,
+    line: input.line,
+    text: lines[idx], // the whole line (includes the checkbox + owner + text)
+  });
+
   // Remove the line. Preserve file-ending newline convention: if the
   // original ended with "\n" (i.e. last array element is ""), re-add it.
   const endedWithNewline = lines.length > 0 && lines[lines.length - 1] === "";
@@ -163,5 +180,5 @@ export async function deleteInlineTask(
 
   await writeFileAtomic(resolved, updated);
 
-  return { tasksPath: toRelative(resolved), line: input.line };
+  return { tasksPath: toRelative(resolved), line: input.line, tombstoneId };
 }
