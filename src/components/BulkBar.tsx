@@ -8,6 +8,7 @@ import {
   deleteInlineTaskApi,
   fetchVault,
   promoteTaskApi,
+  restoreTombstoneApi,
   toggleTaskApi,
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
@@ -247,6 +248,9 @@ export function BulkBar({ projects }: BulkBarProps) {
     setFailures(0);
     let deletedCount = 0;
     let localFailures = 0;
+    // Sprint H.3.7 — collect tombstoneIds from each successful delete.
+    // The revert closure posts restoreTombstoneApi for each in order.
+    const tombstoneIds: string[] = [];
 
     try {
     for (let i = 0; i < entries.length; i++) {
@@ -254,16 +258,24 @@ export function BulkBar({ projects }: BulkBarProps) {
       try {
         if (task.source === "entity" && task.entityPath) {
           const r = await deleteEntityTaskApi({ entityPath: task.entityPath });
-          if (r.ok) deletedCount++;
-          else localFailures++;
+          if (r.ok) {
+            deletedCount++;
+            if (r.data.tombstoneId) tombstoneIds.push(r.data.tombstoneId);
+          } else {
+            localFailures++;
+          }
         } else if (task.source === "inline" && task.line !== undefined) {
           const r = await deleteInlineTaskApi({
             tasksPath,
             line: task.line,
             expectedAction: task.action,
           });
-          if (r.ok) deletedCount++;
-          else localFailures++;
+          if (r.ok) {
+            deletedCount++;
+            if (r.data.tombstoneId) tombstoneIds.push(r.data.tombstoneId);
+          } else {
+            localFailures++;
+          }
         }
       } catch {
         localFailures++;
@@ -275,23 +287,41 @@ export function BulkBar({ projects }: BulkBarProps) {
     await refreshVault();
     clearSelection();
 
-    // No undo window for delete — explicit decision. The toast would be
-    // misleading (revert would fail silently on the unlinked file).
-    // Could surface a separate "deleted N tasks" confirmation banner in
-    // a future sprint; for now the refresh is visible enough.
+    // Sprint H.3.7 — real undo. Post restoreTombstoneApi for each
+    // tombstoneId in REVERSE order so entity restores happen before
+    // any inline line-insertions that might target the same tasks.md
+    // (preserves ordering when both kinds are in the batch).
     if (deletedCount > 0) {
-      // Flash a non-undoable pending so the user has feedback. UndoToast
-      // renders the action==="delete" variant (X dismiss, no fake Undo).
       const label = deletedCount === 1 ? "Task deleted" : `${deletedCount} tasks deleted`;
       setPendingUndo({
         action: "delete",
-        taskIds: [],
+        taskIds: entries.map((e) => e.task.id),
         entityPaths: [],
         label,
         undoneAt: Date.now(),
         revert: async () => {
-          // No-op — delete is terminal. UndoToast hides the Undo button
-          // for this variant; this closure never runs.
+          let restored = 0;
+          for (let i = tombstoneIds.length - 1; i >= 0; i--) {
+            try {
+              const r = await restoreTombstoneApi({ tombstoneId: tombstoneIds[i] });
+              if (r.ok) restored++;
+            } catch {
+              // per-id failure — continue
+            }
+          }
+          await refreshVault();
+          if (restored < tombstoneIds.length) {
+            // Partial restore: show an info toast next — use setPendingUndo
+            // with a terminal-like label. Keep it subtle.
+            setPendingUndo({
+              action: "delete",
+              taskIds: [],
+              entityPaths: [],
+              label: `Restored ${restored}/${tombstoneIds.length} (others swept)`,
+              undoneAt: Date.now(),
+              revert: async () => { /* terminal feedback */ },
+            });
+          }
         },
       });
     }

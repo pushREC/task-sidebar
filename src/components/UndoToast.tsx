@@ -71,12 +71,10 @@ export function UndoToast() {
     }
   }
 
-  // Expose a global undo function for ⌘Z. R1 HIGH fix — only bind when
-  // the action is actually undoable (skip when terminal delete variant
-  // is up, so ⌘Z doesn't fire a no-op revert).
+  // Expose a global undo function for ⌘Z. Sprint H.3.8 — delete variant
+  // now has a real revert (tombstone restore), so ⌘Z IS bound for it.
   useEffect(() => {
     if (!pendingUndo) return;
-    if (pendingUndo.action === "delete") return; // terminal — no ⌘Z
     async function handleCmdZ(e: KeyboardEvent) {
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         const active = document.activeElement as HTMLElement | null;
@@ -98,44 +96,38 @@ export function UndoToast() {
 
   if (!pendingUndo) return null;
 
-  // R1 HIGH (Opus #3) — Delete is TERMINAL. Showing an "Undo" button whose
-  // click is a no-op is a dark pattern. For delete: render a non-undoable
-  // confirmation variant with a Dismiss (X) button instead. The toast
-  // still auto-dismisses after 5s; user gets explicit feedback without
-  // the lie.
-  const isTerminal = pendingUndo.action === "delete";
-
+  // Sprint H.3.8 — delete is no longer terminal. Tombstones survive for
+  // ~5s and restoreFromTombstone is real. We render Undo (primary) AND
+  // a small X (secondary dismiss) so the user can also opt to suppress
+  // the notification without firing revert.
   const node = (
     <div
-      className={`undo-toast${isTerminal ? " undo-toast--terminal" : ""}`}
+      className="undo-toast"
       role="status"
       aria-live="polite"
       aria-atomic="true"
     >
       <span className="undo-toast__label">{pendingUndo.label}</span>
-      {isTerminal ? (
-        <button
-          type="button"
-          className="undo-toast__dismiss press-scale"
-          onClick={() => setPendingUndo(null)}
-          aria-label="Dismiss notification"
-          title="Dismiss"
-        >
-          <X size={11} strokeWidth={2} aria-hidden="true" />
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="undo-toast__btn press-scale"
-          onClick={() => void handleUndoClick()}
-          disabled={isUndoing}
-          aria-label="Undo last action"
-          title="Undo · ⌘Z"
-        >
-          <RotateCcw size={11} strokeWidth={2} aria-hidden="true" />
-          <span>{isUndoing ? "Undoing…" : "Undo"}</span>
-        </button>
-      )}
+      <button
+        type="button"
+        className="undo-toast__btn press-scale"
+        onClick={() => void handleUndoClick()}
+        disabled={isUndoing}
+        aria-label="Undo last action"
+        title="Undo · ⌘Z"
+      >
+        <RotateCcw size={11} strokeWidth={2} aria-hidden="true" />
+        <span>{isUndoing ? "Undoing…" : "Undo"}</span>
+      </button>
+      <button
+        type="button"
+        className="undo-toast__dismiss press-scale"
+        onClick={() => setPendingUndo(null)}
+        aria-label="Dismiss notification"
+        title="Dismiss"
+      >
+        <X size={11} strokeWidth={2} aria-hidden="true" />
+      </button>
     </div>
   );
 

@@ -10,6 +10,7 @@ import {
   fetchVault,
   promoteAndEditTaskApi,
   promoteTaskApi,
+  restoreTombstoneApi,
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
 import { ConfirmModal } from "./ConfirmModal.js";
@@ -775,9 +776,50 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
       }
     }
 
+    // Sprint H.3.9 — single-task delete: capture tombstoneId AND queue a
+    // real-undo PendingUndo (same pattern as BulkBar H.3.7). User can
+    // click Undo in the toast OR hit ⌘Z within 5s to restore.
+    const storeSetPendingUndo = useSidebarStore.getState().setPendingUndo;
+    const taskLabel = task.action.length > 40 ? `${task.action.slice(0, 37)}…` : task.action;
+
+    function queueRestoreUndo(tombstoneId: string | undefined) {
+      if (!tombstoneId) return;
+      storeSetPendingUndo({
+        action: "delete",
+        taskIds: [task.id],
+        entityPaths: [],
+        label: `Deleted: ${taskLabel}`,
+        undoneAt: Date.now(),
+        revert: async () => {
+          try {
+            const r = await restoreTombstoneApi({ tombstoneId });
+            if (!r.ok) {
+              // Restore failed (tombstone swept, target re-occupied, etc.)
+              // Emit a terminal-label toast so user sees why.
+              storeSetPendingUndo({
+                action: "delete",
+                taskIds: [],
+                entityPaths: [],
+                label: "Restore failed — tombstone expired or target exists",
+                undoneAt: Date.now(),
+                revert: async () => { /* terminal feedback */ },
+              });
+            }
+          } catch {
+            /* network/server error — silent; SSE will reconcile */
+          }
+          try {
+            const v = await fetchVault();
+            useSidebarStore.getState().setVault(v);
+          } catch { /* ignore */ }
+        },
+      });
+    }
+
     if (isEntityTask && task.entityPath) {
       const r = await deleteEntityTaskApi({ entityPath: task.entityPath });
       if (r.ok) {
+        queueRestoreUndo(r.data.tombstoneId);
         await collapseAfterRefetch();
       } else {
         setDeleteError(r.error);
@@ -792,6 +834,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
         expectedAction: task.action,
       });
       if (r.ok) {
+        queueRestoreUndo(r.data.tombstoneId);
         await collapseAfterRefetch();
       } else {
         setDeleteError(r.error);
