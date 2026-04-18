@@ -202,20 +202,45 @@ export function promoteAndEditTaskApi(args: {
   return postJson<PromoteAndEditResult>("/api/tasks/promote-and-edit", args);
 }
 
-export interface DeleteEntityResult { ok: boolean; entityPath?: string }
+export interface DeleteEntityResult {
+  ok: boolean;
+  entityPath?: string;
+  // Sprint H.3.3 — server returns tombstoneId when the delete created
+  // a tombstone (happy path). Absent if the file was already gone.
+  tombstoneId?: string;
+}
 export function deleteEntityTaskApi(args: {
   entityPath: string;
 }): Promise<ApiResult<DeleteEntityResult>> {
   return postJson<DeleteEntityResult>("/api/tasks/delete-entity", args);
 }
 
-export interface DeleteInlineResult { ok: boolean; tasksPath?: string; line?: number }
+export interface DeleteInlineResult {
+  ok: boolean;
+  tasksPath?: string;
+  line?: number;
+  tombstoneId?: string; // Sprint H.3.4 — same contract as entity
+}
 export function deleteInlineTaskApi(args: {
   tasksPath: string;
   line: number;
   expectedAction: string;
 }): Promise<ApiResult<DeleteInlineResult>> {
   return postJson<DeleteInlineResult>("/api/tasks/delete-inline", args);
+}
+
+// Sprint H.3.6 — restore a tombstoned file by id. Server returns
+// `{kind, restoredPath}` on success; 404 if tombstone already swept;
+// 409 if original path re-occupied.
+export interface RestoreTombstoneResult {
+  ok: boolean;
+  kind?: "entity" | "inline";
+  restoredPath?: string;
+}
+export function restoreTombstoneApi(args: {
+  tombstoneId: string;
+}): Promise<ApiResult<RestoreTombstoneResult>> {
+  return postJson<RestoreTombstoneResult>("/api/tasks/restore-tombstone", args);
 }
 
 export interface BodyEditResult { ok: boolean; entityPath?: string }

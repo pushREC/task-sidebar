@@ -12,6 +12,7 @@ import { promoteAndEditTask } from "./writers/task-promote-and-edit.js";
 import { editProjectField } from "./writers/project-field-edit.js";
 import { deleteEntityTask, deleteInlineTask } from "./writers/task-delete.js";
 import { editTaskBody } from "./writers/task-body-edit.js";
+import { restoreFromTombstone } from "./writers/task-tombstone.js";
 import { cancelReconcile } from "./status-reconcile-queue.js";
 import { resolveTasksPath, assertSafeTasksPath } from "./safety.js";
 import type { SafetyError } from "./safety.js";
@@ -365,6 +366,27 @@ router.post("/tasks/body-edit", async (req: Request, res: Response) => {
       expectedModified: typeof expectedModified === "string" ? expectedModified : undefined,
     });
     res.json({ ok: true, entityPath: result.entityPath });
+  } catch (err) {
+    handleError(err, res);
+  }
+});
+
+// ─── POST /api/tasks/restore-tombstone ───────────────────────────────────────
+// Sprint H.3.2 — client calls this to restore a deleted file from its
+// tombstone. Validates the tombstoneId shape + restores to the original
+// vault path. 409 if original path re-occupied (concurrent create).
+
+router.post("/tasks/restore-tombstone", async (req: Request, res: Response) => {
+  const { tombstoneId } = req.body as Record<string, unknown>;
+
+  if (typeof tombstoneId !== "string" || tombstoneId.length === 0) {
+    res.status(400).json({ ok: false, error: "tombstoneId must be a non-empty string" });
+    return;
+  }
+
+  try {
+    const result = await restoreFromTombstone(tombstoneId);
+    res.json({ ok: true, kind: result.kind, restoredPath: result.restoredPath });
   } catch (err) {
     handleError(err, res);
   }
