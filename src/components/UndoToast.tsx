@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
 import { useSidebarStore } from "../store.js";
 
 /**
@@ -71,16 +71,14 @@ export function UndoToast() {
     }
   }
 
-  // Expose a global undo function for ⌘Z. This is the simplest cross-
-  // component hook — the keyboard handler imports from store, we'd need
-  // the revert closure. Route through store by calling revert directly.
+  // Expose a global undo function for ⌘Z. R1 HIGH fix — only bind when
+  // the action is actually undoable (skip when terminal delete variant
+  // is up, so ⌘Z doesn't fire a no-op revert).
   useEffect(() => {
     if (!pendingUndo) return;
+    if (pendingUndo.action === "delete") return; // terminal — no ⌘Z
     async function handleCmdZ(e: KeyboardEvent) {
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        // Don't steal ⌘Z from active text inputs (editing a task body,
-        // notes textarea, etc.). If focus is inside an editable control,
-        // let the native undo happen.
         const active = document.activeElement as HTMLElement | null;
         const tag = active?.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || active?.isContentEditable) {
@@ -92,30 +90,52 @@ export function UndoToast() {
     }
     document.addEventListener("keydown", handleCmdZ);
     return () => document.removeEventListener("keydown", handleCmdZ);
+    // handleUndoClick is stable within a pendingUndo window (it reads
+    // pendingUndo from closure + only calls setPendingUndo/setIsUndoing);
+    // re-binding every render is wasteful but not harmful.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingUndo]);
 
   if (!pendingUndo) return null;
 
+  // R1 HIGH (Opus #3) — Delete is TERMINAL. Showing an "Undo" button whose
+  // click is a no-op is a dark pattern. For delete: render a non-undoable
+  // confirmation variant with a Dismiss (X) button instead. The toast
+  // still auto-dismisses after 5s; user gets explicit feedback without
+  // the lie.
+  const isTerminal = pendingUndo.action === "delete";
+
   const node = (
     <div
-      className="undo-toast"
+      className={`undo-toast${isTerminal ? " undo-toast--terminal" : ""}`}
       role="status"
       aria-live="polite"
       aria-atomic="true"
     >
       <span className="undo-toast__label">{pendingUndo.label}</span>
-      <button
-        type="button"
-        className="undo-toast__btn press-scale"
-        onClick={() => void handleUndoClick()}
-        disabled={isUndoing}
-        aria-label="Undo last action"
-        title="Undo · ⌘Z"
-      >
-        <RotateCcw size={11} strokeWidth={2} aria-hidden="true" />
-        <span>{isUndoing ? "Undoing…" : "Undo"}</span>
-      </button>
+      {isTerminal ? (
+        <button
+          type="button"
+          className="undo-toast__dismiss press-scale"
+          onClick={() => setPendingUndo(null)}
+          aria-label="Dismiss notification"
+          title="Dismiss"
+        >
+          <X size={11} strokeWidth={2} aria-hidden="true" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="undo-toast__btn press-scale"
+          onClick={() => void handleUndoClick()}
+          disabled={isUndoing}
+          aria-label="Undo last action"
+          title="Undo · ⌘Z"
+        >
+          <RotateCcw size={11} strokeWidth={2} aria-hidden="true" />
+          <span>{isUndoing ? "Undoing…" : "Undo"}</span>
+        </button>
+      )}
     </div>
   );
 

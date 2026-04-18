@@ -66,3 +66,47 @@ export function cancelReconcile(entityPath: string): boolean {
 export function pendingReconcileCount(): number {
   return pending.size;
 }
+
+/**
+ * R1 MEDIUM (Opus #6, Gemini UNDO-001) — drain on shutdown.
+ * Clears all pending timers and fires each reconcile immediately so
+ * done-transitions already queued don't silently drop when the server
+ * restarts within the 5s window. Registered on SIGTERM/SIGINT so a
+ * graceful shutdown reaches every queued path.
+ *
+ * Fire-and-forget per entry: we don't await; the process is exiting.
+ * If Node SIGKILL's us before subprocess spawn, the reconcile is still
+ * lost — but that's a harder race (forced kill with no cleanup).
+ */
+export function drainPendingReconciles(): number {
+  const count = pending.size;
+  for (const [, entry] of pending) {
+    clearTimeout(entry.timer);
+    try {
+      fireStatusReconcile();
+    } catch {
+      // Best-effort during shutdown.
+    }
+  }
+  pending.clear();
+  return count;
+}
+
+/**
+ * Register shutdown handlers. Call once at server boot. Subsequent
+ * calls are no-ops (idempotent guard via installed flag).
+ */
+let shutdownInstalled = false;
+export function installShutdownDrain(): void {
+  if (shutdownInstalled) return;
+  shutdownInstalled = true;
+  const handler = () => {
+    const drained = drainPendingReconciles();
+    if (drained > 0) {
+      process.stderr.write(`[reconcile-queue] drained ${drained} pending on shutdown\n`);
+    }
+  };
+  process.once("SIGTERM", handler);
+  process.once("SIGINT", handler);
+  process.once("beforeExit", handler);
+}

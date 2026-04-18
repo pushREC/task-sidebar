@@ -2141,6 +2141,16 @@ button.prop-row:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 1px;
 }
+.bulk-bar__btn[disabled] {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+/* R1 progress affordance — failure count in red beside the main count. */
+.bulk-bar__failures {
+  color: var(--accent);
+  font-weight: 500;
+}
 
 /* Undo toast — bottom-right portal. Independent of viewport width; small
    mono label + Undo button with rotating-arrow icon. */
@@ -2200,6 +2210,36 @@ button.prop-row:focus-visible {
 .undo-toast__btn[disabled] {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* R1 HIGH — delete variant: no Undo button; explicit Dismiss (X). */
+.undo-toast--terminal .undo-toast__label {
+  color: var(--text-secondary);
+}
+.undo-toast__dismiss {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 120ms ease-out, border-color 120ms ease-out;
+}
+.undo-toast__dismiss:hover {
+  color: var(--text-primary);
+  border-color: var(--separator-strong);
+}
+.undo-toast__dismiss:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* Range-selected indicator — a bit subtler than .task-row--selected so

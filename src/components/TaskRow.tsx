@@ -109,11 +109,15 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   }
 
   function handleToggleClick(e: React.MouseEvent) {
+    // R1 UX-001 (Gemini) — if the user Shift/⌘-clicks the circle (a
+    // larger hit target than the row), honor the selection intent
+    // instead of toggling done. Let the event bubble to the row
+    // handler which interprets the modifier.
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      return; // allow bubble to handleRowClick
+    }
     e.stopPropagation();
     if (!tasksPath) return;
-    // B11 — entity tasks lack `line`; their toggle goes through status-edit,
-    // not the inline-line toggle endpoint. Fail closed until Sprint E wires
-    // a toggle→status-edit path for entities.
     if (task.line === undefined) return;
     const taskLine = task.line;
 

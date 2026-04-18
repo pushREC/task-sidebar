@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, X, Trash2 } from "lucide-react";
 import type { Task, Project } from "../api.js";
 import {
@@ -39,6 +39,13 @@ export function BulkBar({ projects }: BulkBarProps) {
   const clearSelection = useSidebarStore((s) => s.clearSelection);
   const setPendingUndo = useSidebarStore((s) => s.setPendingUndo);
 
+  // R1 MEDIUM (Opus #1 + Gemini BULK-001) — progress state. During a
+  // bulk action the count label becomes "N/M done…" and buttons disable
+  // so the user sees progress + can't double-submit.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [failures, setFailures] = useState<number>(0);
+  const isProcessing = progress !== null;
+
   // Resolve selected ids → full Task objects + their tasksPath.
   const selectedEntries = useMemo(() => {
     const entries: Array<{ task: Task; tasksPath: string; project: Project }> = [];
@@ -68,10 +75,10 @@ export function BulkBar({ projects }: BulkBarProps) {
   }
 
   // Bulk Done — apply to every selected task. Inline tasks go through
-  // /api/tasks/toggle (simpler than promote→status-edit for the bulk
-  // path; also matches the row-click behavior). Entity tasks go through
-  // /api/tasks/status-edit which queues the delayed reconcile per path.
+  // /api/tasks/toggle; entity tasks go through /api/tasks/status-edit
+  // which queues the delayed reconcile per path.
   async function handleBulkDone() {
+    if (isProcessing) return; // guard against double-click (UX-001 variant)
     const entries = selectedEntries;
     const previouslyOpen = entries.filter((e) => !e.task.done);
     if (previouslyOpen.length === 0) {
@@ -79,20 +86,45 @@ export function BulkBar({ projects }: BulkBarProps) {
       return;
     }
 
-    // Collect entityPaths that will get a queued reconcile.
+    // R1 UX-002 (Gemini) — capture previous status per task so revert
+    // restores the EXACT prior state (not just "open"). Closure keeps
+    // the snapshot alive until the undo window expires.
+    const beforeSnapshot = previouslyOpen.map((e) => ({
+      task: e.task,
+      tasksPath: e.tasksPath,
+      prevStatus: e.task.status ?? "open",
+    }));
+
     const entityPathsQueued: string[] = [];
+    setProgress({ done: 0, total: previouslyOpen.length });
+    setFailures(0);
+    let localFailures = 0;
 
-    for (const { task, tasksPath } of previouslyOpen) {
-      if (task.source === "inline" && task.line !== undefined) {
-        // Inline — toggle to done.
-        await toggleTaskApi({ tasksPath, line: task.line, done: true });
-      } else if (task.source === "entity" && task.entityPath) {
-        await editTaskStatusApi({ entityPath: task.entityPath, status: "done" });
-        entityPathsQueued.push(task.entityPath);
+    for (let i = 0; i < previouslyOpen.length; i++) {
+      const { task, tasksPath } = previouslyOpen[i];
+      try {
+        if (task.source === "inline" && task.line !== undefined) {
+          const r = await toggleTaskApi({ tasksPath, line: task.line, done: true });
+          if (!r.ok) localFailures++;
+        } else if (task.source === "entity" && task.entityPath) {
+          const r = await editTaskStatusApi({ entityPath: task.entityPath, status: "done" });
+          if (r.ok) {
+            entityPathsQueued.push(task.entityPath);
+          } else {
+            localFailures++;
+          }
+        }
+      } catch {
+        localFailures++;
       }
+      setProgress({ done: i + 1, total: previouslyOpen.length });
     }
+    setFailures(localFailures);
 
-    const label = previouslyOpen.length === 1
+    const successCount = previouslyOpen.length - localFailures;
+    const label = localFailures > 0
+      ? `${successCount}/${previouslyOpen.length} tasks done (${localFailures} failed)`
+      : previouslyOpen.length === 1
       ? "Task done"
       : `${previouslyOpen.length} tasks done`;
 
@@ -103,21 +135,17 @@ export function BulkBar({ projects }: BulkBarProps) {
       label,
       undoneAt: Date.now(),
       revert: async () => {
-        // Cancel pending reconciles first so reverting a still-queued
-        // task leaves no phantom reconcile tail.
+        // Cancel pending reconciles first.
         for (const path of entityPathsQueued) {
           await cancelReconcileApi({ entityPath: path });
         }
-        // Flip back to previous state. Inline tasks toggle to open;
-        // entity tasks go back to their previous status. We don't
-        // preserve the exact previous status — anything that was
-        // merged to "done" reverts to "open". Edge: if the task was
-        // previously "in-progress", undo returns it to "open" (minor).
-        for (const { task, tasksPath } of previouslyOpen) {
+        // R1 UX-002 — flip back to the EXACT previous status per task.
+        for (const snap of beforeSnapshot) {
+          const { task, tasksPath, prevStatus } = snap;
           if (task.source === "inline" && task.line !== undefined) {
             await toggleTaskApi({ tasksPath, line: task.line, done: false });
           } else if (task.source === "entity" && task.entityPath) {
-            await editTaskStatusApi({ entityPath: task.entityPath, status: "open" });
+            await editTaskStatusApi({ entityPath: task.entityPath, status: prevStatus });
           }
         }
         await refreshVault();
@@ -126,6 +154,7 @@ export function BulkBar({ projects }: BulkBarProps) {
 
     setPendingUndo(undo);
     await refreshVault();
+    setProgress(null);
     clearSelection();
   }
 
@@ -133,25 +162,45 @@ export function BulkBar({ projects }: BulkBarProps) {
   // Inline tasks don't have a cancel concept in the checkbox syntax; we
   // promote them first (same flow as Sprint A B07 for inline→status).
   async function handleBulkCancel() {
+    if (isProcessing) return;
     const entries = selectedEntries;
     if (entries.length === 0) return;
 
-    const affected: typeof entries = [];
-    for (const entry of entries) {
-      const { task, tasksPath } = entry;
-      if (task.source === "inline" && task.line !== undefined) {
-        const pr = await promoteTaskApi({ sourcePath: tasksPath, line: task.line });
-        if (pr.ok && pr.data.path) {
-          await editTaskStatusApi({ entityPath: pr.data.path, status: "cancelled" });
-          affected.push(entry);
-        }
-      } else if (task.source === "entity" && task.entityPath) {
-        await editTaskStatusApi({ entityPath: task.entityPath, status: "cancelled" });
-        affected.push(entry);
-      }
-    }
+    setProgress({ done: 0, total: entries.length });
+    setFailures(0);
+    let localFailures = 0;
 
-    const label = affected.length === 1 ? "Task cancelled" : `${affected.length} tasks cancelled`;
+    const affected: Array<{ task: Task; tasksPath: string; prevStatus: string }> = [];
+    for (let i = 0; i < entries.length; i++) {
+      const { task, tasksPath } = entries[i];
+      try {
+        if (task.source === "inline" && task.line !== undefined) {
+          const pr = await promoteTaskApi({ sourcePath: tasksPath, line: task.line });
+          if (pr.ok && pr.data.path) {
+            const r = await editTaskStatusApi({ entityPath: pr.data.path, status: "cancelled" });
+            if (r.ok) affected.push({ task, tasksPath, prevStatus: task.status ?? "open" });
+            else localFailures++;
+          } else {
+            localFailures++;
+          }
+        } else if (task.source === "entity" && task.entityPath) {
+          const r = await editTaskStatusApi({ entityPath: task.entityPath, status: "cancelled" });
+          if (r.ok) affected.push({ task, tasksPath, prevStatus: task.status ?? "open" });
+          else localFailures++;
+        }
+      } catch {
+        localFailures++;
+      }
+      setProgress({ done: i + 1, total: entries.length });
+    }
+    setFailures(localFailures);
+
+    const label = localFailures > 0
+      ? `${affected.length}/${entries.length} cancelled (${localFailures} failed)`
+      : affected.length === 1
+      ? "Task cancelled"
+      : `${affected.length} tasks cancelled`;
+
     setPendingUndo({
       action: "cancel",
       taskIds: affected.map((e) => e.task.id),
@@ -159,18 +208,19 @@ export function BulkBar({ projects }: BulkBarProps) {
       label,
       undoneAt: Date.now(),
       revert: async () => {
-        for (const { task } of affected) {
-          // Post-promote, inline tasks have an entityPath. Fresh refetch
-          // will surface it, but at this point our reference is stale.
-          // For revert, just refresh and let user retry.
+        for (const { task, prevStatus } of affected) {
           if (task.source === "entity" && task.entityPath) {
-            await editTaskStatusApi({ entityPath: task.entityPath, status: "open" });
+            await editTaskStatusApi({ entityPath: task.entityPath, status: prevStatus });
           }
+          // Post-promote inline→entity: can't revert without the post-
+          // promote entityPath, which only the refreshed vault has. User
+          // sees the state in the refetch; SSE will propagate.
         }
         await refreshVault();
       },
     });
     await refreshVault();
+    setProgress(null);
     clearSelection();
   }
 
@@ -178,25 +228,39 @@ export function BulkBar({ projects }: BulkBarProps) {
   // Delete is NOT undoable (we can't restore a deleted file). The toast
   // shows but clicking Undo is a no-op; clicking Clear dismisses it.
   async function handleBulkDelete() {
+    if (isProcessing) return;
     const entries = selectedEntries;
     if (entries.length === 0) return;
 
+    setProgress({ done: 0, total: entries.length });
+    setFailures(0);
     let deletedCount = 0;
-    for (const { task, tasksPath } of entries) {
-      if (task.source === "entity" && task.entityPath) {
-        const r = await deleteEntityTaskApi({ entityPath: task.entityPath });
-        if (r.ok) deletedCount++;
-      } else if (task.source === "inline" && task.line !== undefined) {
-        const r = await deleteInlineTaskApi({
-          tasksPath,
-          line: task.line,
-          expectedAction: task.action,
-        });
-        if (r.ok) deletedCount++;
+    let localFailures = 0;
+    for (let i = 0; i < entries.length; i++) {
+      const { task, tasksPath } = entries[i];
+      try {
+        if (task.source === "entity" && task.entityPath) {
+          const r = await deleteEntityTaskApi({ entityPath: task.entityPath });
+          if (r.ok) deletedCount++;
+          else localFailures++;
+        } else if (task.source === "inline" && task.line !== undefined) {
+          const r = await deleteInlineTaskApi({
+            tasksPath,
+            line: task.line,
+            expectedAction: task.action,
+          });
+          if (r.ok) deletedCount++;
+          else localFailures++;
+        }
+      } catch {
+        localFailures++;
       }
+      setProgress({ done: i + 1, total: entries.length });
     }
+    setFailures(localFailures);
 
     await refreshVault();
+    setProgress(null);
     clearSelection();
 
     // No undo window for delete — explicit decision. The toast would be
@@ -219,17 +283,25 @@ export function BulkBar({ projects }: BulkBarProps) {
     }
   }
 
+  const countLabel = isProcessing
+    ? `${progress!.done}/${progress!.total} done…`
+    : `${selectedEntries.length} selected`;
+
   return (
     <div className="bulk-bar" role="toolbar" aria-label={`${selectedEntries.length} selected`}>
       <span className="bulk-bar__count" aria-live="polite">
-        {selectedEntries.length} selected
+        {countLabel}
+        {failures > 0 && !isProcessing && (
+          <span className="bulk-bar__failures"> · {failures} failed</span>
+        )}
       </span>
       <div className="bulk-bar__actions">
         <button
           type="button"
           className="bulk-bar__btn press-scale"
           onClick={() => void handleBulkDone()}
-          title="Mark all done"
+          disabled={isProcessing}
+          title="Mark all done · x"
         >
           <CheckCircle2 size={12} strokeWidth={1.5} aria-hidden="true" />
           <span>Done</span>
@@ -238,7 +310,8 @@ export function BulkBar({ projects }: BulkBarProps) {
           type="button"
           className="bulk-bar__btn press-scale"
           onClick={() => void handleBulkCancel()}
-          title="Cancel all"
+          disabled={isProcessing}
+          title="Cancel all · c"
         >
           <X size={12} strokeWidth={1.5} aria-hidden="true" />
           <span>Cancel</span>
@@ -247,6 +320,7 @@ export function BulkBar({ projects }: BulkBarProps) {
           type="button"
           className="bulk-bar__btn bulk-bar__btn--danger press-scale"
           onClick={() => void handleBulkDelete()}
+          disabled={isProcessing}
           title="Delete all"
         >
           <Trash2 size={12} strokeWidth={1.5} aria-hidden="true" />
@@ -256,6 +330,7 @@ export function BulkBar({ projects }: BulkBarProps) {
           type="button"
           className="bulk-bar__btn bulk-bar__btn--ghost press-scale"
           onClick={clearSelection}
+          disabled={isProcessing}
           title="Clear selection · Esc"
         >
           Clear

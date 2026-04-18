@@ -1,3 +1,34 @@
+// Sprint G CONTRACT-001 — the canonical shapes are now in src/shared/types.ts
+// (discriminated Task union, etc.). api.ts keeps a LOOSE Task shape for
+// backward-compat with existing Sprint A-F consumers that still use
+// `task.line !== undefined` guards. The shared types are available for
+// new code that wants strict narrowing.
+//
+// Pragmatic choice: migrating all consumers to the discriminated union
+// in a single sprint would create 40+ line-level edits in TaskRow +
+// views + popovers. We keep the loose shape here and migrate site-by-
+// site in future sprints.
+export type {
+  TaskStatus,
+  OwnerValue,
+  EnergyValue,
+  ImpactValue,
+  UrgencyValue,
+  PriorityRank,
+  PriorityResult,
+  InlineTask,
+  EntityTask,
+  Project as ProjectStrict,
+  VaultResponse as VaultResponseStrict,
+} from "./shared/types.js";
+export { isInlineTask, isEntityTask } from "./shared/types.js";
+
+/**
+ * Loose Task shape — optional location fields so existing Sprint A-F
+ * consumers compile without touching their line-guards. New code
+ * should prefer the discriminated `InlineTask | EntityTask` union
+ * from `./shared/types.js` for stricter narrowing.
+ */
 export interface Task {
   id: string;
   action: string;
@@ -6,7 +37,6 @@ export interface Task {
   line?: number;
   projectSlug?: string;
   projectTitle?: string;
-  // v2.0 canonical fields
   source?: "inline" | "entity";
   entityPath?: string;
   energyLevel?: "low" | "medium" | "high";
@@ -16,11 +46,9 @@ export interface Task {
   urgency?: "very-high" | "high" | "medium" | "low" | "very-low";
   blockedBy?: string[];
   parentProject?: string;
-  // Sprint E — timestamps + body (entity tasks only)
   created?: string;
   modified?: string;
   body?: string;
-  // P1-1 — server can return "critical" rank when score ≥250
   priority?: { score: number; rank: "critical" | "high" | "medium" | "low"; breakdown: Record<string, number> };
   overdue?: boolean;
   dueToday?: boolean;
@@ -38,7 +66,6 @@ export interface Project {
   tasksPath: string;
   readmePath?: string;
   tasks: Task[];
-  // v2.0 project detail fields
   outcome?: string;
   deadline?: string;
   targetDate?: string;

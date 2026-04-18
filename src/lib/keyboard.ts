@@ -233,8 +233,10 @@ export function useKeyboardNav(
         return;
       }
 
-      // Sprint G — Space toggles the selection of the current row. If none
-      // is selected, falls back to selecting the first visible row.
+      // Sprint G — Space toggles the selection of the current row.
+      // R1 KB-001: if no anchor, set the first visible row AND add it to
+      // the selection Set so Space on empty selection fulfills the user's
+      // "select this" intent in one press rather than two.
       if (e.key === " " || e.code === "Space") {
         e.preventDefault();
         const current = state.selectedTaskId;
@@ -242,6 +244,7 @@ export function useKeyboardNav(
           const ids = getVisibleTaskIds();
           if (ids.length > 0) {
             state.setSelectedTaskId(ids[0]);
+            state.toggleSelection(ids[0]);
           }
           return;
         }

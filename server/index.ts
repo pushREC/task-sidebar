@@ -8,12 +8,18 @@ import { buildVaultIndex } from "./vault-index.js";
 import { startWatcher } from "./watcher.js";
 import { sseHandler, broadcast } from "./sse.js";
 import { taskRoutes } from "./routes.js";
+import { installShutdownDrain } from "./status-reconcile-queue.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const DOCS_ROOT = resolve(__dirname, "..", "docs");
 
 async function start(): Promise<void> {
+  // Sprint G R1 — drain pending 5s reconciles on graceful shutdown so
+  // tasks transitioned to "done" within the window don't silently miss
+  // their reconcile side-effects on server restart.
+  installShutdownDrain();
+
   const app = express();
 
   const vite = await createViteServer({
