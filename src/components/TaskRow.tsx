@@ -116,62 +116,88 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   //               entityPath returned.
   // Entity task → editTaskFieldApi against task.entityPath.
   //
-  // `setTwo` chains a second write after a successful first — used by the
-  // priority popover to write impact + urgency in sequence.
+  // Round-1 convergence:
+  //   - C1-1 — on mid-chain failure of a multi-field write, best-effort
+  //     ROLLBACK the first (previous-value) so the task doesn't settle
+  //     into a half-updated state. "Best-effort" because the rollback
+  //     itself could fail — if so, error-dot fires and user can retry.
+  //   - C1-3 — in-flight guard (`applyingRef`) prevents a rapid second
+  //     click from re-entering promote-and-edit against the stale
+  //     `source === "inline"` prop before SSE has refreshed it.
+  const applyingRef = useRef(false);
   async function applyFieldEdits(
-    edits: Array<{ field: string; value: string | number | null }>
+    edits: Array<{ field: string; value: string | number | null; rollbackValue: string | number | null }>
   ): Promise<void> {
     if (edits.length === 0) return;
-    clearTaskError(task.id);
-    let entityPath = task.entityPath;
+    if (applyingRef.current) return; // C1-3 drop rapid re-entry
+    applyingRef.current = true;
+    try {
+      clearTaskError(task.id);
 
-    // Inline → promote-and-edit for the FIRST field, capture new entityPath
-    if (task.source === "inline") {
-      if (!tasksPath || task.line === undefined) return;
-      const first = edits[0];
-      const r = await promoteAndEditTaskApi({
-        tasksPath,
-        line: task.line,
-        field: first.field,
-        value: first.value,
-      });
-      if (!r.ok) {
-        showError();
-        return;
-      }
-      const newEntityPath = r.data.entityPath;
-      if (!newEntityPath) return;
-      entityPath = newEntityPath;
-      // Remaining edits go to the new entity path.
-      for (let i = 1; i < edits.length; i++) {
-        const e = edits[i];
-        const r2 = await editTaskFieldApi({ entityPath: newEntityPath, field: e.field, value: e.value });
-        if (!r2.ok) {
+      // Inline → promote-and-edit for the FIRST field, capture new entityPath
+      if (task.source === "inline") {
+        if (!tasksPath || task.line === undefined) return;
+        const first = edits[0];
+        const r = await promoteAndEditTaskApi({
+          tasksPath,
+          line: task.line,
+          field: first.field,
+          value: first.value,
+        });
+        if (!r.ok) {
           showError();
           return;
         }
-      }
-      return;
-    }
-
-    // Entity path: sequential field-edit calls.
-    if (!entityPath) return;
-    for (const e of edits) {
-      const r = await editTaskFieldApi({ entityPath, field: e.field, value: e.value });
-      if (!r.ok) {
-        showError();
+        const newEntityPath = r.data.entityPath;
+        if (!newEntityPath) return;
+        // Remaining edits go to the new entity path.
+        for (let i = 1; i < edits.length; i++) {
+          const e = edits[i];
+          const r2 = await editTaskFieldApi({ entityPath: newEntityPath, field: e.field, value: e.value });
+          if (!r2.ok) {
+            // C1-1 — best-effort rollback of the already-committed field.
+            await editTaskFieldApi({
+              entityPath: newEntityPath,
+              field: edits[0].field,
+              value: edits[0].rollbackValue,
+            });
+            showError();
+            return;
+          }
+        }
         return;
       }
+
+      // Entity path: sequential field-edit calls with rollback of prior
+      // commits on any mid-chain failure.
+      const entityPath = task.entityPath;
+      if (!entityPath) return;
+      const committed: Array<{ field: string; rollbackValue: string | number | null }> = [];
+      for (const e of edits) {
+        const r = await editTaskFieldApi({ entityPath, field: e.field, value: e.value });
+        if (!r.ok) {
+          // C1-1 — roll back previously-committed fields in reverse order.
+          for (let i = committed.length - 1; i >= 0; i--) {
+            const c = committed[i];
+            await editTaskFieldApi({ entityPath, field: c.field, value: c.rollbackValue });
+          }
+          showError();
+          return;
+        }
+        committed.push({ field: e.field, rollbackValue: e.rollbackValue });
+      }
+    } finally {
+      applyingRef.current = false;
     }
   }
 
   function handleDuePick(iso: string | null) {
-    void applyFieldEdits([{ field: "due", value: iso }]);
+    void applyFieldEdits([{ field: "due", value: iso, rollbackValue: task.due ?? null }]);
   }
   function handlePriorityPick(impact: string | null, urgency: string | null) {
     void applyFieldEdits([
-      { field: "impact", value: impact },
-      { field: "urgency", value: urgency },
+      { field: "impact",  value: impact,  rollbackValue: task.impact ?? null  },
+      { field: "urgency", value: urgency, rollbackValue: task.urgency ?? null },
     ]);
   }
 

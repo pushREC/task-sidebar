@@ -52,19 +52,32 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
   const dateInputRef = useRef<HTMLInputElement | null>(null);
   const now = new Date();
 
+  // Codex C1-2 — a "committed" guard prevents the date input's blur
+  // handler from racing against a preset/Clear click. Once any button
+  // in the popover has initiated a commit, further writes from the
+  // input's blur are ignored. Also: we commit on Enter only, never on
+  // blur, which is what removes the race at the source.
+  const committedRef = useRef(false);
+
   function handlePreset(iso: string) {
+    if (committedRef.current) return;
+    committedRef.current = true;
     onPick(iso);
     onClose();
   }
 
-  function handleCustomCommit() {
+  function handleCustomEnter() {
+    if (committedRef.current) return;
     if (customValue && /^\d{4}-\d{2}-\d{2}$/.test(customValue)) {
+      committedRef.current = true;
       onPick(customValue);
       onClose();
     }
   }
 
   function handleClear() {
+    if (committedRef.current) return;
+    committedRef.current = true;
     onPick(null);
     onClose();
   }
@@ -88,20 +101,21 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
         );
       })}
       <div className="popover-divider" />
+      {/* Codex C1-2 — commit on Enter only, never on blur. Otherwise a
+          typed date would race a preset/Clear click and silently win. */}
       <input
         ref={dateInputRef}
         type="date"
         className="popover-date-input"
         value={customValue}
-        aria-label="Custom due date"
+        aria-label="Custom due date (press Enter to apply)"
         onChange={(e) => setCustomValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            handleCustomCommit();
+            handleCustomEnter();
           }
         }}
-        onBlur={handleCustomCommit}
       />
       {currentDue && (
         <>
