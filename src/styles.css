@@ -42,6 +42,11 @@
     --text-primary: #1a1917;
     --text-secondary: #5a5955;
     --separator: rgba(26, 25, 23, 0.08);
+    /* R3-4 — was missing from the system-light branch; the dark-mode
+       0.18 alpha would have leaked through here. Mirrors the explicit
+       [data-theme="light"] block so system-light users get the same
+       WCAG-compliant interactive border contrast. */
+    --separator-strong: rgba(26, 25, 23, 0.28);
     --skeleton: rgba(26, 25, 23, 0.05);
     --skeleton-hi: rgba(26, 25, 23, 0.10);
   }

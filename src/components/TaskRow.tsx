@@ -251,11 +251,15 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   }
 
   return (
+    // Round-3: `aria-current="true"` announces the j/k visual selection to
+    // assistive tech (Gemini M-2). We dropped the agenda-row-{id} attribute
+    // that was only used by the removed aria-activedescendant pattern
+    // (Opus M2). `role="listitem"` is the semantic row.
     <div
       className={`task-row-wrapper${isExpanded ? " task-row-wrapper--expanded" : ""}${isSelected ? " task-row-wrapper--selected" : ""}`}
       data-task-wrapper
       role="listitem"
-      id={`agenda-row-${taskId}`}
+      aria-current={isSelected ? "true" : undefined}
     >
       <div
         className={rowClasses}

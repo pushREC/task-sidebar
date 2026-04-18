@@ -28,15 +28,23 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
   const expandedProjectSlug = useSidebarStore((s) => s.expandedProjectSlug);
   const setExpandedProjectSlug = useSidebarStore((s) => s.setExpandedProjectSlug);
 
-  // C4-N — shared `now` with the same 60s refresh cadence as AgendaView
-  // so the due-chip overdue/today classes agree across views.
-  const [nowTick, setNowTick] = useState(0);
+  // C4-N + Gemini M-4 — shared `now` that only recomputes on a LOCAL
+  // calendar day rollover. Prevents mid-day re-renders from shifting
+  // due-chip styling unnecessarily. Matches AgendaView exactly.
+  const [epochDay, setEpochDay] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  });
   useEffect(() => {
-    const id = setInterval(() => setNowTick((t) => t + 1), 60_000);
+    const id = setInterval(() => {
+      const d = new Date();
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      setEpochDay((prev) => (prev === key ? prev : key));
+    }, 60_000);
     return () => clearInterval(id);
   }, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const now = useMemo(() => new Date(), [projects, nowTick]);
+  const now = useMemo(() => new Date(), [projects, epochDay]);
 
   const activeProjects = projects
     .filter((p) => p.status === "active")
@@ -101,7 +109,10 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
             )}
 
             {isExpanded && openTasks.length > 0 && (
-              <div className="project-tasks">
+              // Round-3: role="list" is the direct parent of TaskRow's
+              // role="listitem". Labelled by the project header so AT
+              // users hear "{Project title}, list, N items".
+              <div className="project-tasks" role="list" aria-label={`${project.title} tasks`}>
                 {openTasks.map((task) => (
                   <TaskRow
                     key={task.id}

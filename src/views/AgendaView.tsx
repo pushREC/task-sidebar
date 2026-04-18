@@ -32,16 +32,24 @@ export function AgendaView({ projects }: AgendaViewProps) {
   const collapsedBuckets = useSidebarStore((s) => s.collapsedBuckets);
   const toggleBucketCollapsed = useSidebarStore((s) => s.toggleBucketCollapsed);
 
-  // O-1 + O1-N — single source of truth for "now" across this render.
-  // Refreshes on vault updates AND every 60s via a tick counter, so a
-  // long-running sidebar doesn't hold a stale midnight boundary.
-  const [nowTick, setNowTick] = useState(0);
+  // O-1 + O1-N + Gemini M-4 — single "now" source. Recomputes only when
+  // the local calendar day changes (not every 60s). Prevents full
+  // re-bucket jank + focus loss on mid-day refreshes. A short 60s tick
+  // checks whether the day rolled over; in the 99.9% case it's a no-op.
+  const [epochDay, setEpochDay] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  });
   useEffect(() => {
-    const id = setInterval(() => setNowTick((t) => t + 1), 60_000);
+    const id = setInterval(() => {
+      const d = new Date();
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      setEpochDay((prev) => (prev === key ? prev : key));
+    }, 60_000);
     return () => clearInterval(id);
   }, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const now = useMemo(() => new Date(), [projects, nowTick]);
+  const now = useMemo(() => new Date(), [projects, epochDay]);
 
   // Flatten all eligible tasks with project metadata attached.
   const allTasks = useMemo<EnrichedTask[]>(() => {
@@ -78,12 +86,11 @@ export function AgendaView({ projects }: AgendaViewProps) {
   }
 
   return (
-    // Round-2 simplification: semantic role="list" with role="listitem"
-    // children. j/k keyboard nav is a VISUAL selection overlay, not an
-    // ARIA listbox. Screen readers navigate the list naturally via DOM
-    // order. This removes the tabIndex/activedescendant/hidden-target
-    // complexity that round-1's listbox pattern introduced.
-    <div className="agenda-view" data-view="agenda" role="list" aria-label="Agenda">
+    // Round-3 fix (Gemini H-1 / Opus H-2): role="list" MUST be the direct
+    // parent of role="listitem" per ARIA spec. Intermediate <section>
+    // elements break the relationship. So role="list" now lives on the
+    // bucket-body (direct parent), and agenda-view is a plain container.
+    <div className="agenda-view" data-view="agenda">
       {groups.map((group) => {
         const collapsed = collapsedBuckets.has(group.bucket);
         const panelId = `bucket-panel-${group.bucket}`;
@@ -91,11 +98,12 @@ export function AgendaView({ projects }: AgendaViewProps) {
         return (
           // C-1 — single [data-bucket] node per bucket (on the <section>);
           // BucketHeader must NOT also emit data-bucket.
+          // Round-3: the ARIA grouping moved down to the bucket-body
+          // role="list"; the <section> is just visual structure.
           <section
             key={group.bucket}
             className="bucket"
             data-bucket={group.bucket}
-            aria-labelledby={headingId}
           >
             <BucketHeader
               bucket={group.bucket}
@@ -108,11 +116,14 @@ export function AgendaView({ projects }: AgendaViewProps) {
             />
             {/* M-2 — bucket-body stays in the DOM when collapsed (hidden
                 attribute) so aria-controls on the header always resolves.
-                role="group" dropped in round-2; the section itself is the
-                semantic grouping (aria-labelledby → header). */}
+                Round-3 Gemini H-1 / Opus H-2 — role="list" is the DIRECT
+                parent of listitems; no intervening <section> breaking the
+                ARIA tree. aria-labelledby names the list by its header. */}
             <div
               id={panelId}
               className="bucket-body"
+              role="list"
+              aria-labelledby={headingId}
               hidden={collapsed}
             >
               {group.tasks.length > 0 ? (

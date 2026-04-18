@@ -253,9 +253,23 @@ export const useSidebarStore = create<SidebarState>()(
       toggleBucketCollapsed(bucket) {
         set((state) => {
           const next = new Set(state.collapsedBuckets);
-          if (next.has(bucket)) next.delete(bucket);
-          else next.add(bucket);
-          return { collapsedBuckets: next };
+          const collapsing = !next.has(bucket);
+          if (collapsing) next.add(bucket);
+          else next.delete(bucket);
+          // R3-1 — if the user just collapsed the bucket that owns the
+          // selection, clear selectedTaskId so j/k doesn't no-op against
+          // a now-hidden row.
+          const patch: Partial<SidebarState> = { collapsedBuckets: next };
+          if (collapsing && state.selectedTaskId) {
+            const sel = document.querySelector<HTMLElement>(
+              `[data-task-id="${state.selectedTaskId}"]`
+            );
+            const sec = sel?.closest<HTMLElement>("section[data-bucket]");
+            if (sec?.dataset.bucket === bucket) {
+              patch.selectedTaskId = null;
+            }
+          }
+          return patch;
         });
       },
 

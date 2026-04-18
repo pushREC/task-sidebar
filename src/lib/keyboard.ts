@@ -78,16 +78,15 @@ function getVisibleBuckets(): string[] {
  * Global keyboard navigation hook.
  * Register once at the App level — it drives all shortcut behaviour.
  *
- * Shortcut map (Sprint B):
+ * Shortcut map (Sprint B, round-3 current):
  *   1          → Agenda tab
  *   2          → Projects tab
  *   g a        → Agenda tab (legacy mnemonic, kept for muscle memory)
  *   g p        → Projects tab
- *   g j        → next bucket (auto-expand + first row)
- *   g k        → previous bucket (auto-expand + first row)
+ *   g j        → next non-empty bucket (auto-expand + first row)
+ *   g k        → previous non-empty bucket (auto-expand + first row)
  *   j / k      → row select within bucket (bounded)
- *   Tab        → cross bucket boundary (auto-expands collapsed buckets)
- *   Shift+Tab  → cross bucket boundary backward
+ *   Tab        → browser-native focus order (NOT hijacked after round-2)
  *   a          → focus quick-add
  *   e          → inline-edit selected row
  *   Enter      → toggle inline-expand detail panel on selected row
