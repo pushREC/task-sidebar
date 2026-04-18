@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Settings } from "lucide-react";
 import { fetchVault, subscribeVaultEvents, type SSEConnectionState } from "./api.js";
+import { epochDayKey } from "./lib/format.js";
 import { useSidebarStore } from "./store.js";
 import { AgendaView } from "./views/AgendaView.js";
 import { ProjectsView } from "./views/ProjectsView.js";
@@ -16,11 +17,17 @@ import { AGENDA_PROJECT_STATUSES } from "./lib/project-scopes.js";
 // Sprint B D16 — tabs become Agenda + Projects only.
 type Tab = "agenda" | "projects";
 
-const DATE_LABEL = new Date().toLocaleDateString("en-US", {
-  weekday: "short",
-  month: "short",
-  day: "numeric",
-});
+// Sprint F R1 (Gemini) stale-header-date — DATE_LABEL was computed at module
+// load and never refreshed. For a sidebar that may stay open overnight, the
+// header would show yesterday's date. Helper that produces the string from
+// a given Date; the component memoizes on epochDay so rollover re-renders.
+function formatDateLabel(d: Date): string {
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 // Sprint F P04 — sync pill lifecycle:
 //   SSE event fires → "saving" for 400ms → "synced" for 800ms → hidden.
@@ -60,6 +67,27 @@ export function App() {
 
   const { theme, setTheme, cycleTheme } = useTheme();
   const gearButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  // Sprint F R1 fix — daily rollover ticker for the header date label.
+  const [epochDay, setEpochDay] = useState(() => epochDayKey(new Date()));
+  useEffect(() => {
+    const id = setInterval(() => {
+      const key = epochDayKey(new Date());
+      setEpochDay((prev) => (prev === key ? prev : key));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dateLabel = useMemo(() => formatDateLabel(new Date()), [epochDay]);
+
+  // Sprint F R1 HIGH fix — latest-vault ref so the SSE callback reads the
+  // most recent projects count WITHOUT re-binding the EventSource on every
+  // store update. Previous impl depended on [loadVault, vault] which caused
+  // a reconnect churn loop.
+  const vaultRef = useRef(vault);
+  useEffect(() => {
+    vaultRef.current = vault;
+  }, [vault]);
 
   // Sprint F E06 — first-launch onboarding card. Read once on mount; will
   // re-render on dismiss. Persists across reloads via localStorage.
@@ -126,10 +154,11 @@ export function App() {
         pulseSyncPill();
         // H14 — debounce aria-live announcements
         if (liveDebounceRef.current === null) {
-          // Sprint F E07 — include a richer announcement including counts
-          // when available at announce time.
-          const announceText = vault
-            ? `Vault updated · ${vault.projects.length} projects`
+          // Sprint F E07 — read latest vault via ref so this callback
+          // stays stable across renders (R1 fix for SSE reconnect loop).
+          const latestVault = vaultRef.current;
+          const announceText = latestVault
+            ? `Vault updated · ${latestVault.projects.length} projects`
             : "Syncing";
           setLiveAnnouncement(announceText);
           liveDebounceRef.current = setTimeout(() => {
@@ -141,7 +170,6 @@ export function App() {
       },
       (state) => {
         setSseState(state);
-        // Sprint F E02 — banner only if still disconnected after 10s.
         if (state === "open") {
           setSseBannerVisible(false);
           if (sseBannerTimerRef.current !== null) {
@@ -157,7 +185,7 @@ export function App() {
       }
     );
     return cleanup;
-  }, [loadVault, vault]);
+  }, [loadVault]);  // R1 HIGH FIX — removed `vault` to prevent reconnect loop
 
   // E08 — Close theme popover on outside click + return focus to gear button.
   useEffect(() => {
@@ -232,7 +260,7 @@ export function App() {
   const headerLabel =
     activeTab === "projects"
       ? `Projects · ${activeProjectCount} active`
-      : `Agenda · ${DATE_LABEL}`;
+      : `Agenda · ${dateLabel}`;
 
   // Sprint F — sync pill class + label.
   const syncPillClass =

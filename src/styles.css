@@ -129,8 +129,23 @@ body {
   min-height: 100dvh;
   overflow-x: hidden;
   /* P11 — background + color cross-fade 80ms on theme change (reduced-motion
-     suppresses via the @media block at file end). */
+     suppresses via the @media block at file end). R1 Gemini: the surface
+     elements (.header, .tab-strip, .quick-add, .sse-banner) also need this
+     transition or the theme swap shows a jarring seam between the fading
+     body and the instantly-repainted header strip. */
   transition: background-color 80ms ease-out, color 80ms ease-out;
+}
+.header,
+.tab-strip,
+.quick-add,
+.sse-banner,
+.onboarding-card,
+.offline-card,
+.projects-toolbar,
+.task-detail-panel,
+.confirm-modal,
+.confirm-modal-overlay {
+  transition: background-color 80ms ease-out, color 80ms ease-out, border-color 80ms ease-out;
 }
 
 .sidebar {
@@ -1812,6 +1827,18 @@ button.prop-row:focus-visible {
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* R1 Gemini — neutral variant override for non-destructive confirms.
+   Prevents a "confirm archive?" style dialog from looking as dangerous
+   as "delete task?". */
+.confirm-modal__btn--neutral.confirm-modal__btn--confirm {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--separator-strong);
+}
+.confirm-modal__btn--neutral.confirm-modal__btn--confirm:hover:not([disabled]) {
+  background: var(--bg-surface);
+  border-color: var(--text-secondary);
+}
 
 /* ─── Sprint F — Feel + edges + audit residue ─────────────────────────── */
 
@@ -1855,8 +1882,18 @@ button.prop-row:focus-visible {
 }
 
 /* A4 — extracted from App.tsx inline style */
+/* R1 Gemini stale-vault-visibility-gap — upgrade from plain red text to
+   an accent-tinted banner that looks more like the SSE banner, so a user
+   whose connection dropped mid-session doesn't overlook the stale state. */
 .empty-state--error {
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  padding: 10px 16px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.3px;
+  text-align: center;
 }
 
 /* E01 — OfflineCard: displayed in place of the task list when /api/vault fails. */
