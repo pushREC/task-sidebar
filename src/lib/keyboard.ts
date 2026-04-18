@@ -4,9 +4,24 @@ import type { BucketName } from "./time-buckets.js";
 
 const G_SEQUENCE_TIMEOUT_MS = 1500;
 
+/**
+ * "Is a foreground input or overlay currently owning focus?"
+ *
+ * The global keyboard layer must stand down when:
+ *  - The user is typing into a form control (input/textarea/select).
+ *  - A popover or command palette is open with focus inside — otherwise
+ *    keys like Enter (activate menuitem) + j/k (list nav) route to the
+ *    row-level handler instead of the focused popover action.
+ *    (Sprint C round 3 R3-C-1 from Codex critique.)
+ */
 function isInputFocused(): boolean {
-  const tag = document.activeElement?.tagName?.toLowerCase();
-  return tag === "input" || tag === "textarea" || tag === "select";
+  const ae = document.activeElement as HTMLElement | null;
+  if (!ae) return false;
+  const tag = ae.tagName?.toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  // Also stand down when focus is inside a popover/palette surface.
+  if (ae.closest(".popover, .cmdp, .cmdp-backdrop")) return true;
+  return false;
 }
 
 /**
@@ -112,6 +127,14 @@ export function useKeyboardNav(
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
+      // ⌘K / Ctrl+K — toggle command palette (fires even when input focused)
+      if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const s = store.getState();
+        s.setPaletteOpen(!s.paletteOpen);
+        return;
+      }
+
       // ⌘D / Ctrl+D — cycle theme (fires even when input focused)
       if (e.key === "d" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();

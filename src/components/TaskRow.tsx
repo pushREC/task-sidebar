@@ -429,6 +429,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
           onClick={handleToggleClick}
           aria-pressed={task.done}
           aria-label={task.done ? "Mark open" : "Mark done"}
+          title={task.done ? "Mark open · x" : "Mark done · x"}
         >
           {task.done
             ? <CheckCircle2 size={16} strokeWidth={1.5} />
@@ -504,6 +505,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
               type="button"
               className="task-edit-affordance"
               aria-label="Edit task text"
+              title="Edit · E"
               tabIndex={isSelected ? 0 : -1}
               onClick={(e) => {
                 e.stopPropagation();

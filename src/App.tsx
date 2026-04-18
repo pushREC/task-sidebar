@@ -6,6 +6,7 @@ import { AgendaView } from "./views/AgendaView.js";
 import { ProjectsView } from "./views/ProjectsView.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { SkeletonList } from "./components/SkeletonRow.js";
+import { CommandPalette } from "./components/CommandPalette.js";
 import { useKeyboardNav } from "./lib/keyboard.js";
 import { useTheme } from "./lib/theme.js";
 import type { ThemeChoice } from "./lib/theme.js";
@@ -183,7 +184,7 @@ export function App() {
             ref={gearButtonRef}
             type="button"
             className="header-icon"
-            title="Theme"
+            title="Theme · ⌘D"
             aria-haspopup="menu"
             aria-expanded={showThemePopover}
             aria-label="Theme selector"
@@ -307,6 +308,9 @@ export function App() {
           inputRef={quickAddRef}
         />
       )}
+      {/* Sprint D F01 — Command palette portals itself to document.body,
+          rendered here only for predictable mount/unmount alongside App. */}
+      <CommandPalette />
     </div>
   );
 }

@@ -54,6 +54,9 @@ interface SidebarState {
   entityCreateMode: boolean;
   entityCreateDefaults: Partial<EntityFields> | null;
 
+  // ── Sprint D — command palette (NOT persisted) ──────────────────────────
+  paletteOpen: boolean;
+
   // ── Actions ─────────────────────────────────────────────────────────────
   setVault: (vault: VaultResponse) => void;
   optimisticToggle: (taskId: string) => void;
@@ -68,6 +71,7 @@ interface SidebarState {
   setExpandedProjectSlug: (slug: string | null) => void;
   setEntityCreateMode: (enabled: boolean) => void;
   setEntityCreateDefaults: (defaults: Partial<EntityFields> | null) => void;
+  setPaletteOpen: (open: boolean) => void;
 }
 
 // ─── Persisted shape (disk format) ──────────────────────────────────────────
@@ -181,10 +185,18 @@ export const useSidebarStore = create<SidebarState>()(
       expandedProjectSlug: null,
       entityCreateMode: false,
       entityCreateDefaults: null,
+      paletteOpen: false,
 
       // ── Actions ───────────────────────────────────────────────────────────
       setVault(vault) {
-        set({ vault });
+        // Sprint C R3-C-2 (Codex) — inline task ids are line-based
+        // (`inline:{slug}:{lineNumber}` in vault-index.ts). After a
+        // promote+refetch the ids shift, so any errorTaskIds kept from
+        // the pre-refetch snapshot would attach to whatever inline task
+        // inherited that line number. Clear on every vault update; it's
+        // transient state (2s auto-clear anyway) and clearing avoids
+        // the subtle mis-attach.
+        set({ vault, errorTaskIds: new Set() });
       },
 
       optimisticToggle(taskId) {
@@ -314,6 +326,10 @@ export const useSidebarStore = create<SidebarState>()(
 
       setEntityCreateDefaults(defaults) {
         set({ entityCreateDefaults: defaults });
+      },
+
+      setPaletteOpen(open) {
+        set({ paletteOpen: open });
       },
     }),
     {
