@@ -151,9 +151,10 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     setExpandedTaskId(isExpanded ? null : taskId);
   }
 
-  // Note: Enter/Escape for row expand handled globally in useKeyboardNav
-  // via dispatched click events. No onKeyDown here so the row is NOT a
-  // focusable interactive ARIA control (see B04 comment in JSX).
+  // Note: Enter for row expand handled globally in useKeyboardNav — it
+  // calls `onEnterExpand` on the selected row directly (not a dispatched
+  // click). No onKeyDown here because the row is a semantic listitem,
+  // not a focusable ARIA control (see B04 comment in JSX).
 
   // ── Render ────────────────────────────────────────────────────────────────
 

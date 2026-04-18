@@ -244,9 +244,23 @@ export const useSidebarStore = create<SidebarState>()(
       toggleProjectExpanded(slug) {
         set((state) => {
           const next = new Set(state.expandedProjects);
-          if (next.has(slug)) next.delete(slug);
+          const collapsing = next.has(slug);
+          if (collapsing) next.delete(slug);
           else next.add(slug);
-          return { expandedProjects: next };
+          // R4-3 (Gemini) — mirror the bucket-collapse pattern: clear
+          // selectedTaskId if it lives inside the project being collapsed.
+          // Otherwise j/k next-press jumps to the top of the list.
+          const patch: Partial<SidebarState> = { expandedProjects: next };
+          if (collapsing && state.selectedTaskId) {
+            const sel = document.querySelector<HTMLElement>(
+              `[data-task-id="${state.selectedTaskId}"]`
+            );
+            const group = sel?.closest<HTMLElement>("[data-project-slug]");
+            if (group?.dataset.projectSlug === slug) {
+              patch.selectedTaskId = null;
+            }
+          }
+          return patch;
         });
       },
 
@@ -256,9 +270,10 @@ export const useSidebarStore = create<SidebarState>()(
           const collapsing = !next.has(bucket);
           if (collapsing) next.add(bucket);
           else next.delete(bucket);
-          // R3-1 — if the user just collapsed the bucket that owns the
-          // selection, clear selectedTaskId so j/k doesn't no-op against
-          // a now-hidden row.
+          // Clear selectedTaskId if the user just collapsed the bucket that
+          // owns it — otherwise j/k nav no-ops against a now-hidden row.
+          // (Pairs with keyboard.ts's getVisibleTaskIds hidden-ancestor
+          // guard; both added in Sprint B round 3.)
           const patch: Partial<SidebarState> = { collapsedBuckets: next };
           if (collapsing && state.selectedTaskId) {
             const sel = document.querySelector<HTMLElement>(

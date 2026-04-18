@@ -298,6 +298,28 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
 }
 .project-caret.expanded { transform: rotate(90deg); }
 .project-title { font-size: 13px; font-weight: 500; color: var(--text-primary); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.02em; }
+/* R4-2 — project-title-btn lets keyboard users activate the detail panel.
+   Visually identical to the old span; behaves like a button. */
+.project-title-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.project-title-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.project-title-btn:hover .project-title { color: var(--text-primary); }
 .project-due-chip { font-size: 11px; color: var(--accent); flex-shrink: 0; font-family: var(--font-mono); font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .project-tasks { padding-bottom: 4px; }
 .project-empty { padding: 8px 32px; font-size: 11px; color: var(--text-secondary); }

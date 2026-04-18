@@ -14,6 +14,20 @@ function startOfDay(d: Date): Date {
 }
 
 /**
+ * Canonical local-calendar-day key in strict ISO (YYYY-MM-DD) form.
+ * Used by AgendaView + ProjectsView's epochDay ticker so the `now` memo
+ * only recomputes on actual day rollover. Zero-padded so string
+ * comparisons are lexically sortable and month/day values never look
+ * like `2026-0-5` (Opus R4-1 — unpadded getMonth() could mislead).
+ */
+export function epochDayKey(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Whole-day difference between two dates in the user's local timezone.
  * Positive when `b` is after `a`. Always an integer (no fractional days).
  */

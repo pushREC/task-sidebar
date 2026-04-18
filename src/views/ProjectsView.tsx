@@ -5,6 +5,7 @@ import { TaskRow } from "../components/TaskRow.js";
 import { ProjectDetailPanel } from "../components/ProjectDetailPanel.js";
 import { EmptyState } from "../components/EmptyState.js";
 import { useSidebarStore } from "../store.js";
+import { epochDayKey } from "../lib/format.js";
 
 interface ProjectsViewProps {
   projects: Project[];
@@ -31,14 +32,10 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
   // C4-N + Gemini M-4 — shared `now` that only recomputes on a LOCAL
   // calendar day rollover. Prevents mid-day re-renders from shifting
   // due-chip styling unnecessarily. Matches AgendaView exactly.
-  const [epochDay, setEpochDay] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  });
+  const [epochDay, setEpochDay] = useState(() => epochDayKey(new Date()));
   useEffect(() => {
     const id = setInterval(() => {
-      const d = new Date();
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const key = epochDayKey(new Date());
       setEpochDay((prev) => (prev === key ? prev : key));
     }, 60_000);
     return () => clearInterval(id);
@@ -80,12 +77,11 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
           setExpandedProjectSlug(isDetailExpanded ? null : project.slug);
         }
 
+        const projectHeadingId = `project-heading-${project.slug}`;
+        const detailPanelId = `project-detail-${project.slug}`;
         return (
           <div key={project.slug} className="project-group" data-project-slug={project.slug}>
-            <div
-              className={`project-header${isDetailExpanded ? " project-header--detail-open" : ""}`}
-              onClick={handleDetailToggle}
-            >
+            <div className={`project-header${isDetailExpanded ? " project-header--detail-open" : ""}`}>
               <button
                 type="button"
                 className={`project-caret${isExpanded ? " expanded" : ""}`}
@@ -95,7 +91,20 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
               >
                 <ChevronRight size={12} strokeWidth={2} />
               </button>
-              <span className="project-title">{project.title}</span>
+              {/* R4-2 — title is now a proper <button> so keyboard users can
+                  Tab to it and activate with Enter/Space to toggle the
+                  ProjectDetailPanel. aria-expanded tracks open-state;
+                  aria-controls points to the detail region. */}
+              <button
+                type="button"
+                className="project-title-btn"
+                id={projectHeadingId}
+                aria-expanded={isDetailExpanded}
+                aria-controls={detailPanelId}
+                onClick={handleDetailToggle}
+              >
+                <span className="project-title">{project.title}</span>
+              </button>
               {openTasks.length > 0 && (
                 <span className="count-badge">{openTasks.length}</span>
               )}
@@ -105,14 +114,16 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
             </div>
 
             {isExpanded && isDetailExpanded && (
-              <ProjectDetailPanel project={project} />
+              <div id={detailPanelId}>
+                <ProjectDetailPanel project={project} />
+              </div>
             )}
 
             {isExpanded && openTasks.length > 0 && (
-              // Round-3: role="list" is the direct parent of TaskRow's
-              // role="listitem". Labelled by the project header so AT
-              // users hear "{Project title}, list, N items".
-              <div className="project-tasks" role="list" aria-label={`${project.title} tasks`}>
+              // Round-4: consistent aria-labelledby pattern (matches
+              // AgendaView's bucket-body which labels via bucket header id).
+              // role="list" is the direct parent of TaskRow role="listitem".
+              <div className="project-tasks" role="list" aria-labelledby={projectHeadingId}>
                 {openTasks.map((task) => (
                   <TaskRow
                     key={task.id}

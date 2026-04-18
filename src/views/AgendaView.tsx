@@ -7,6 +7,7 @@ import { EmptyState } from "../components/EmptyState.js";
 import { useSidebarStore } from "../store.js";
 import { groupIntoBuckets } from "../lib/time-buckets.js";
 import { AGENDA_PROJECT_STATUSES } from "../lib/project-scopes.js";
+import { epochDayKey } from "../lib/format.js";
 
 /**
  * Agenda view — time-bucketed cross-project task list.
@@ -36,14 +37,10 @@ export function AgendaView({ projects }: AgendaViewProps) {
   // the local calendar day changes (not every 60s). Prevents full
   // re-bucket jank + focus loss on mid-day refreshes. A short 60s tick
   // checks whether the day rolled over; in the 99.9% case it's a no-op.
-  const [epochDay, setEpochDay] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  });
+  const [epochDay, setEpochDay] = useState(() => epochDayKey(new Date()));
   useEffect(() => {
     const id = setInterval(() => {
-      const d = new Date();
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const key = epochDayKey(new Date());
       setEpochDay((prev) => (prev === key ? prev : key));
     }, 60_000);
     return () => clearInterval(id);
@@ -118,16 +115,20 @@ export function AgendaView({ projects }: AgendaViewProps) {
                 attribute) so aria-controls on the header always resolves.
                 Round-3 Gemini H-1 / Opus H-2 — role="list" is the DIRECT
                 parent of listitems; no intervening <section> breaking the
-                ARIA tree. aria-labelledby names the list by its header. */}
-            <div
-              id={panelId}
-              className="bucket-body"
-              role="list"
-              aria-labelledby={headingId}
-              hidden={collapsed}
-            >
-              {group.tasks.length > 0 ? (
-                group.tasks.map((t, idx) => (
+                ARIA tree. aria-labelledby names the list by its header.
+                Round-4 R4-1 — role="list" applied only when tasks exist;
+                an empty bucket renders as a plain region so a
+                non-listitem child (.bucket-empty) doesn't violate the
+                "list must contain listitems" ARIA constraint. */}
+            {group.tasks.length > 0 ? (
+              <div
+                id={panelId}
+                className="bucket-body"
+                role="list"
+                aria-labelledby={headingId}
+                hidden={collapsed}
+              >
+                {group.tasks.map((t, idx) => (
                   <TaskRow
                     key={t.id}
                     task={t}
@@ -136,11 +137,18 @@ export function AgendaView({ projects }: AgendaViewProps) {
                     projects={projects}
                     now={now}
                   />
-                ))
-              ) : (
+                ))}
+              </div>
+            ) : (
+              <div
+                id={panelId}
+                className="bucket-body"
+                aria-labelledby={headingId}
+                hidden={collapsed}
+              >
                 <div className="bucket-empty">Nothing here.</div>
-              )}
-            </div>
+              </div>
+            )}
           </section>
         );
       })}
