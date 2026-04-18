@@ -6,6 +6,11 @@ interface PopoverProps {
   onClose: () => void;
   ariaLabel: string;
   children: React.ReactNode;
+  /** Gemini POPOVER-SEMANTICS-MENU-INPUT — ARIA role for the surface.
+   *  "menu" is correct for pure-action panes (PriorityPopover); "dialog"
+   *  is correct when a non-menuitem control (like a date input) lives
+   *  inside. Default "menu" for backwards compat. */
+  role?: "menu" | "dialog";
 }
 
 /**
@@ -30,7 +35,7 @@ interface PopoverProps {
  *     any other scroller) still closes. Closing on scroll keeps the
  *     popover's apparent position from drifting.
  */
-export function Popover({ anchorRef, onClose, ariaLabel, children }: PopoverProps) {
+export function Popover({ anchorRef, onClose, ariaLabel, children, role = "menu" }: PopoverProps) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
   // ─── Position tracking ────────────────────────────────────────────────────
@@ -202,8 +207,12 @@ export function Popover({ anchorRef, onClose, ariaLabel, children }: PopoverProp
     <div
       ref={popoverRef}
       className="popover"
-      role="menu"
+      role={role}
       aria-label={ariaLabel}
+      // `aria-modal="true"` when role=dialog signals a short-lived
+      // focus-scope to assistive tech. (role=menu keeps its transient
+      // semantics without this attribute.)
+      {...(role === "dialog" ? { "aria-modal": "true" as const } : {})}
       style={{ position: "fixed" }}
     >
       {children}

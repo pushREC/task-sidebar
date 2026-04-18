@@ -211,10 +211,27 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     }
   }
 
+  // TASK-ROW-FOCUS-LOSS-ON-DISABLE (Gemini R3) — when the user picks a
+  // value, the anchor button immediately becomes disabled={isApplying}.
+  // If focus was on the anchor, the browser drops it to <body>, losing
+  // the user's place in the list. Fix: synchronously blur the currently
+  // focused element before disable (if it's the anchor) so focus
+  // settles on <body> intentionally; user can Tab back without confusion.
+  // (A later refinement could park focus on the row wrapper but that
+  // requires making the wrapper focusable, which conflicts with our
+  // listitem semantics from Sprint B R2.)
+  function releaseAnchorFocus(anchor: HTMLElement | null) {
+    if (anchor && document.activeElement === anchor) {
+      anchor.blur();
+    }
+  }
+
   function handleDuePick(iso: string | null) {
+    releaseAnchorFocus(dueBtnRef.current);
     void applyFieldEdits([{ field: "due", value: iso, rollbackValue: task.due ?? null }]);
   }
   function handlePriorityPick(impact: string | null, urgency: string | null) {
+    releaseAnchorFocus(priorityBtnRef.current);
     void applyFieldEdits([
       { field: "impact",  value: impact,  rollbackValue: task.impact ?? null  },
       { field: "urgency", value: urgency, rollbackValue: task.urgency ?? null },
@@ -442,7 +459,6 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
               aria-label={task.due ? `Due ${task.due}` : "Set due date"}
               aria-haspopup="menu"
               aria-expanded={openPopover === "due"}
-              aria-busy={isApplying}
               disabled={isApplying}
               onClick={(e) => {
                 e.stopPropagation();
@@ -462,7 +478,6 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
               aria-label={task.priority ? `Priority ${RANK_PILL_LABEL[task.priority.rank] ?? "?"}` : "Set priority"}
               aria-haspopup="menu"
               aria-expanded={openPopover === "priority"}
-              aria-busy={isApplying}
               disabled={isApplying}
               onClick={(e) => {
                 e.stopPropagation();

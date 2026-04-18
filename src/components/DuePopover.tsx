@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Popover } from "./Popover.js";
+import { parseISODate } from "../lib/format.js";
 
 interface DuePopoverProps {
   anchorRef: React.RefObject<HTMLElement | null>;
@@ -68,7 +69,9 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
 
   function commitCustom(iso: string) {
     if (committedRef.current) return;
-    if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    // C-R3-F2 — strict calendar validation via shared parseISODate
+    // (round-trips through Date constructor, rejects 2026-02-31 et al).
+    if (iso && parseISODate(iso)) {
       committedRef.current = true;
       onPick(iso);
       onClose();
@@ -87,7 +90,10 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
   }
 
   return (
-    <Popover anchorRef={anchorRef} onClose={onClose} ariaLabel="Due date">
+    // role="dialog" because DuePopover hosts a <input type="date"> — ARIA
+    // menus may only contain menuitem children, so a menu + input is a
+    // semantics violation. Dialog conveys "short-lived focus scope" to AT.
+    <Popover anchorRef={anchorRef} onClose={onClose} ariaLabel="Due date" role="dialog">
       {PRESETS.map((preset) => {
         const iso = preset.dateFn(now);
         const active = currentDue === iso;
@@ -96,7 +102,6 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
             key={preset.label}
             type="button"
             className={`popover-item${active ? " active" : ""}`}
-            role="menuitem"
             onClick={() => handlePreset(iso)}
           >
             <span>{preset.label}</span>
@@ -120,10 +125,10 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
         onChange={(e) => {
           const next = e.target.value;
           setCustomValue(next);
-          // Only auto-commit if the new value is a complete ISO date.
-          // (Mid-typing via keyboard produces partial values like
-          // "2026" or "2026-04" which should NOT commit.)
-          if (next && /^\d{4}-\d{2}-\d{2}$/.test(next)) {
+          // Auto-commit only on a valid, fully-specified calendar date.
+          // Partial typed values (2026 / 2026-04) and impossible dates
+          // (2026-02-31) don't commit — parseISODate is the validator.
+          if (next && parseISODate(next)) {
             commitCustom(next);
           }
         }}
@@ -140,7 +145,6 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
           <button
             type="button"
             className="popover-item popover-item--destructive"
-            role="menuitem"
             onClick={handleClear}
           >
             Clear due date
