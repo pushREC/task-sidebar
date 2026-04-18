@@ -165,20 +165,30 @@ interface EditableSelectProps {
   options: readonly string[];
   placeholder?: string;
   readOnly?: boolean;
-  onSave: (value: string) => void;
+  // Sprint H.2.5 — task.modified captured on every render; Editable*
+  // snapshots it to a ref at edit-open to pass through onSave.
+  modified?: string;
+  onSave: (value: string, expectedModified?: string) => void;
 }
 
-function EditableSelect({ label, value, options, placeholder, readOnly, onSave }: EditableSelectProps) {
+function EditableSelect({ label, value, options, placeholder, readOnly, modified, onSave }: EditableSelectProps) {
   const [editing, setEditing] = useState(false);
   const selectRef = useRef<HTMLSelectElement | null>(null);
+  // Sprint H.2.5 — snapshot task.modified when the user starts editing.
+  // Preserves the "state the edit was built on" for the mtime check,
+  // even if SSE refetches and updates task.modified mid-edit.
+  const editOpenModifiedRef = useRef<string | undefined>(undefined);
 
   function handleRowClick() {
-    if (!readOnly) setEditing(true);
+    if (!readOnly) {
+      editOpenModifiedRef.current = modified;
+      setEditing(true);
+    }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     if (e.target.value) {
-      onSave(e.target.value);
+      onSave(e.target.value, editOpenModifiedRef.current);
     }
     setEditing(false);
   }
@@ -232,17 +242,20 @@ interface EditableTextProps {
   placeholder?: string;
   readOnly?: boolean;
   multiline?: boolean;
-  onSave: (value: string) => void;
+  modified?: string;
+  onSave: (value: string, expectedModified?: string) => void;
 }
 
-function EditableText({ label, value, placeholder, readOnly, multiline, onSave }: EditableTextProps) {
+function EditableText({ label, value, placeholder, readOnly, multiline, modified, onSave }: EditableTextProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const editOpenModifiedRef = useRef<string | undefined>(undefined);
 
   function handleRowClick() {
     if (!readOnly) {
       setDraft(value ?? "");
+      editOpenModifiedRef.current = modified;
       setEditing(true);
     }
   }
@@ -250,7 +263,7 @@ function EditableText({ label, value, placeholder, readOnly, multiline, onSave }
   function commitIfChanged() {
     const trimmed = draft.trim();
     if (trimmed !== (value ?? "") && trimmed.length > 0) {
-      onSave(trimmed);
+      onSave(trimmed, editOpenModifiedRef.current);
     }
     setEditing(false);
   }
@@ -311,17 +324,20 @@ interface EditableTextAreaProps {
   placeholder?: string;
   readOnly?: boolean;
   rows?: number;
-  onSave: (value: string) => void;
+  modified?: string;
+  onSave: (value: string, expectedModified?: string) => void;
 }
 
-function EditableTextArea({ label, value, placeholder, readOnly, rows = 4, onSave }: EditableTextAreaProps) {
+function EditableTextArea({ label, value, placeholder, readOnly, rows = 4, modified, onSave }: EditableTextAreaProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editOpenModifiedRef = useRef<string | undefined>(undefined);
 
   function handleRowClick() {
     if (!readOnly) {
       setDraft(value ?? "");
+      editOpenModifiedRef.current = modified;
       setEditing(true);
     }
   }
@@ -333,7 +349,7 @@ function EditableTextArea({ label, value, placeholder, readOnly, rows = 4, onSav
     const trimmed = draft.replace(/\s+$/g, "");
     const current = value ?? "";
     if (trimmed !== current) {
-      onSave(trimmed);
+      onSave(trimmed, editOpenModifiedRef.current);
     }
     setEditing(false);
   }
@@ -382,20 +398,25 @@ interface EditableDateProps {
   value: string | undefined;
   placeholder?: string;
   readOnly?: boolean;
-  onSave: (value: string) => void;
+  modified?: string;
+  onSave: (value: string, expectedModified?: string) => void;
 }
 
-function EditableDate({ label, value, placeholder, readOnly, onSave }: EditableDateProps) {
+function EditableDate({ label, value, placeholder, readOnly, modified, onSave }: EditableDateProps) {
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const editOpenModifiedRef = useRef<string | undefined>(undefined);
 
   function handleRowClick() {
-    if (!readOnly) setEditing(true);
+    if (!readOnly) {
+      editOpenModifiedRef.current = modified;
+      setEditing(true);
+    }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.value) {
-      onSave(e.target.value);
+      onSave(e.target.value, editOpenModifiedRef.current);
     }
     setEditing(false);
   }
@@ -440,17 +461,20 @@ interface EditableNumberProps {
   placeholder?: string;
   readOnly?: boolean;
   min?: number;
-  onSave: (value: number) => void;
+  modified?: string;
+  onSave: (value: number, expectedModified?: string) => void;
 }
 
-function EditableNumber({ label, value, placeholder, readOnly, min = 0, onSave }: EditableNumberProps) {
+function EditableNumber({ label, value, placeholder, readOnly, min = 0, modified, onSave }: EditableNumberProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value !== undefined ? String(value) : "");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const editOpenModifiedRef = useRef<string | undefined>(undefined);
 
   function handleRowClick() {
     if (!readOnly) {
       setDraft(value !== undefined ? String(value) : "");
+      editOpenModifiedRef.current = modified;
       setEditing(true);
     }
   }
@@ -458,7 +482,7 @@ function EditableNumber({ label, value, placeholder, readOnly, min = 0, onSave }
   function commitIfChanged() {
     const parsed = parseInt(draft, 10);
     if (!isNaN(parsed) && parsed >= min && parsed !== value) {
-      onSave(parsed);
+      onSave(parsed, editOpenModifiedRef.current);
     }
     setEditing(false);
   }
@@ -503,15 +527,18 @@ function EditableNumber({ label, value, placeholder, readOnly, min = 0, onSave }
 
 // ─── Save hooks ───────────────────────────────────────────────────────────────
 
-function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () => void) {
+function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () => void, onMtimeConflict: () => void) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const isInline = task.source === "inline";
 
   const saveField = useCallback(
-    async (field: string, value: string | number | null): Promise<void> => {
+    async (field: string, value: string | number | null, expectedModified?: string): Promise<void> => {
       if (isInline) {
         if (!tasksPath || task.line === undefined) return;
         setSaveState("saving");
+        // Inline path: promote-and-edit — the entity file doesn't exist
+        // yet, so mtime-lock doesn't apply on this first call. After
+        // promote, subsequent saves go via entity path below.
         const result = await promoteAndEditTaskApi({
           tasksPath,
           line: task.line,
@@ -530,15 +557,32 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
 
       if (!task.entityPath) return;
       setSaveState("saving");
-      const result = await editTaskFieldApi({ entityPath: task.entityPath, field, value });
+      const result = await editTaskFieldApi({
+        entityPath: task.entityPath,
+        field,
+        value,
+        expectedModified,
+      });
       if (result.ok) {
         setSaveState("idle");
       } else {
+        // Sprint H.2.6 — dedicated handling for mtime-mismatch (409).
+        // The error string is exactly "mtime-mismatch" per mtime-lock.ts.
+        if (result.error === "mtime-mismatch") {
+          onMtimeConflict();
+          // Keep the editing state active at the call site (Editable*
+          // already closed its own editing state on commit, but the
+          // parent panel will show the conflict toast + refetch). The
+          // user can re-open the row and re-apply their edit on fresh
+          // state.
+          setSaveState("idle");
+          return;
+        }
         setSaveState("error");
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    [isInline, task.entityPath, task.line, tasksPath, onPromoted]
+    [isInline, task.entityPath, task.line, tasksPath, onPromoted, onMtimeConflict]
   );
 
   const saveStatus = useCallback(
@@ -590,20 +634,29 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
   );
 
   const saveBody = useCallback(
-    async (body: string): Promise<void> => {
+    async (body: string, expectedModified?: string): Promise<void> => {
       // Body edits only exist for entity tasks. If the user is editing notes
       // on an inline task, the UI doesn't surface the row — this is a guard.
       if (!task.entityPath) return;
       setSaveState("saving");
-      const result = await editTaskBodyApi({ entityPath: task.entityPath, body });
+      const result = await editTaskBodyApi({
+        entityPath: task.entityPath,
+        body,
+        expectedModified,
+      });
       if (result.ok) {
         setSaveState("idle");
       } else {
+        if (result.error === "mtime-mismatch") {
+          onMtimeConflict();
+          setSaveState("idle");
+          return;
+        }
         setSaveState("error");
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    [task.entityPath]
+    [task.entityPath, onMtimeConflict]
   );
 
   return { saveState, saveField, saveStatus, saveBody };
@@ -620,12 +673,42 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
   // hide the panel contents behind a "Deleting…" overlay so the user
   // doesn't see the about-to-be-gone task as still-interactive for 1-2s.
   const [isDeleting, setIsDeleting] = useState(false);
+  // Sprint H.2.6 — mtime-conflict banner state. Set by the save hooks
+  // when the server returns 409 mtime-mismatch. Auto-clears after 6s
+  // (long enough to read; short enough to not clutter). Triggers a
+  // vault refetch so the panel shows fresh frontmatter + body.
+  const [mtimeConflict, setMtimeConflict] = useState(false);
+  const mtimeConflictTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handlePromoted = useCallback(() => {
     setExpandedTaskId(null);
   }, [setExpandedTaskId]);
 
-  const { saveState, saveField, saveStatus, saveBody } = useSaveField(task, tasksPath, handlePromoted);
+  const handleMtimeConflict = useCallback(() => {
+    setMtimeConflict(true);
+    if (mtimeConflictTimerRef.current !== null) clearTimeout(mtimeConflictTimerRef.current);
+    mtimeConflictTimerRef.current = setTimeout(() => {
+      setMtimeConflict(false);
+      mtimeConflictTimerRef.current = null;
+    }, 6000);
+    // Refetch so the panel shows fresh disk state. User's draft text
+    // in any open Editable* is PRESERVED (state lives in the child).
+    void (async () => {
+      try {
+        const v = await fetchVault();
+        useSidebarStore.getState().setVault(v);
+      } catch { /* SSE will catch up */ }
+    })();
+  }, []);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (mtimeConflictTimerRef.current !== null) clearTimeout(mtimeConflictTimerRef.current);
+    };
+  }, []);
+
+  const { saveState, saveField, saveStatus, saveBody } = useSaveField(task, tasksPath, handlePromoted, handleMtimeConflict);
 
   const isEntityTask = task.source === "entity" && !!task.entityPath;
   const isInline = task.source === "inline";
@@ -793,7 +876,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           label="Action"
           value={task.action}
           readOnly={isDisabled}
-          onSave={(v) => void saveField("action", v)}
+          modified={task.modified}
+          onSave={(v, em) => void saveField("action", v, em)}
         />
       ) : (
         <PropertyRow label="Action" readOnly>
@@ -832,7 +916,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           options={OWNER_OPTIONS}
           placeholder="owner"
           readOnly={isDisabled}
-          onSave={(v) => void saveField("owner", v)}
+          modified={task.modified}
+          onSave={(v, em) => void saveField("owner", v, em)}
         />
 
         <EditableSelect
@@ -841,7 +926,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           options={ENERGY_OPTIONS}
           placeholder="energy level"
           readOnly={isDisabled}
-          onSave={(v) => void saveField("energy-level", v)}
+          modified={task.modified}
+          onSave={(v, em) => void saveField("energy-level", v, em)}
         />
 
         <EditableNumber
@@ -850,7 +936,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           placeholder="duration (min)"
           readOnly={isDisabled}
           min={0}
-          onSave={(v) => void saveField("estimated-duration", v)}
+          modified={task.modified}
+          onSave={(v, em) => void saveField("estimated-duration", v, em)}
         />
 
         <EditableDate
@@ -858,7 +945,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           value={task.due}
           placeholder="due date"
           readOnly={isDisabled}
-          onSave={(v) => void saveField("due", v)}
+          modified={task.modified}
+          onSave={(v, em) => void saveField("due", v, em)}
         />
 
         <EditableSelect
@@ -867,7 +955,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           options={IMPACT_URGENCY_OPTIONS}
           placeholder="impact"
           readOnly={isDisabled}
-          onSave={(v) => void saveField("impact", v)}
+          modified={task.modified}
+          onSave={(v, em) => void saveField("impact", v, em)}
         />
 
         <EditableSelect
@@ -876,7 +965,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           options={IMPACT_URGENCY_OPTIONS}
           placeholder="urgency"
           readOnly={isDisabled}
-          onSave={(v) => void saveField("urgency", v)}
+          modified={task.modified}
+          onSave={(v, em) => void saveField("urgency", v, em)}
         />
 
         {task.blockedBy && task.blockedBy.length > 0 ? (
@@ -893,7 +983,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
             value={undefined}
             placeholder="blocked-by (wikilinks)"
             readOnly={isDisabled}
-            onSave={(v) => void saveField("blocked-by", v)}
+            modified={task.modified}
+            onSave={(v, em) => void saveField("blocked-by", v, em)}
           />
         )}
 
@@ -905,7 +996,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
             value={task.body ?? ""}
             placeholder="notes"
             readOnly={isDisabled}
-            onSave={(v) => void saveBody(v)}
+            modified={task.modified}
+            onSave={(v, em) => void saveBody(v, em)}
           />
         )}
 
@@ -925,6 +1017,12 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
       {saveState === "error" && (
         <div className="prop-error-row" role="alert">
           Write failed — check server.
+        </div>
+      )}
+
+      {mtimeConflict && (
+        <div className="prop-error-row prop-error-row--conflict" role="status" aria-live="polite">
+          This file was edited elsewhere. Your draft is kept — refresh the row and reapply to save.
         </div>
       )}
 

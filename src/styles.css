@@ -821,6 +821,18 @@ h3.group-header, .group-header {
   padding: 6px 0 2px;
 }
 
+/* Sprint H.2.6 — mtime-mismatch conflict banner. Warning tone, not error;
+   the user's draft is preserved + the next save works if they refresh. */
+.prop-error-row--conflict {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+  border-left: 2px solid var(--accent);
+  padding: 8px 12px;
+  margin: 4px -16px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 /* Action row lives above the prop-list without the grid layout */
 .task-detail-panel > .prop-row:first-child {
   margin-bottom: 0;
