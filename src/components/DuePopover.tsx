@@ -66,13 +66,17 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
     onClose();
   }
 
-  function handleCustomEnter() {
+  function commitCustom(iso: string) {
     if (committedRef.current) return;
-    if (customValue && /^\d{4}-\d{2}-\d{2}$/.test(customValue)) {
+    if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
       committedRef.current = true;
-      onPick(customValue);
+      onPick(iso);
       onClose();
     }
+  }
+
+  function handleCustomEnter() {
+    commitCustom(customValue);
   }
 
   function handleClear() {
@@ -101,15 +105,28 @@ export function DuePopover({ anchorRef, currentDue, onClose, onPick }: DuePopove
         );
       })}
       <div className="popover-divider" />
-      {/* Codex C1-2 — commit on Enter only, never on blur. Otherwise a
-          typed date would race a preset/Clear click and silently win. */}
+      {/* Codex C1-2 + R2-C-1 — commit on change (native date picker)
+          AND on Enter (keyboard typing). Both paths guarded by
+          committedRef so preset/Clear clicks can't be overridden.
+          The native `type=date` onChange fires when the user picks
+          from the calendar widget (mouse/touch) — previously only
+          Enter was a commit path, which mouse-only users never hit. */}
       <input
         ref={dateInputRef}
         type="date"
         className="popover-date-input"
         value={customValue}
-        aria-label="Custom due date (press Enter to apply)"
-        onChange={(e) => setCustomValue(e.target.value)}
+        aria-label="Custom due date"
+        onChange={(e) => {
+          const next = e.target.value;
+          setCustomValue(next);
+          // Only auto-commit if the new value is a complete ISO date.
+          // (Mid-typing via keyboard produces partial values like
+          // "2026" or "2026-04" which should NOT commit.)
+          if (next && /^\d{4}-\d{2}-\d{2}$/.test(next)) {
+            commitCustom(next);
+          }
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();

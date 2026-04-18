@@ -157,18 +157,25 @@ export function Popover({ anchorRef, onClose, ariaLabel, children }: PopoverProp
       // (idx === -1), treat "forward" as 0 and "backward" as last, so
       // wrap math doesn't land on the penultimate item.
       const rawIdx = active ? focusables.indexOf(active) : -1;
-      if (e.key === "Tab" || e.key === "ArrowDown") {
-        e.preventDefault();
-        const next = rawIdx === -1
-          ? focusables[0]
-          : focusables[(rawIdx + 1) % focusables.length];
-        next.focus();
-      } else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+      // Codex R2-C-2 — explicit shift handling FIRST so Shift+Tab goes
+      // backward instead of matching the forward Tab branch.
+      const isBackward =
+        e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey);
+      const isForward =
+        e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey);
+
+      if (isBackward) {
         e.preventDefault();
         const prev = rawIdx === -1
           ? focusables[focusables.length - 1]
           : focusables[(rawIdx - 1 + focusables.length) % focusables.length];
         prev.focus();
+      } else if (isForward) {
+        e.preventDefault();
+        const next = rawIdx === -1
+          ? focusables[0]
+          : focusables[(rawIdx + 1) % focusables.length];
+        next.focus();
       }
     }
 

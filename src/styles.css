@@ -1295,6 +1295,22 @@ button.task-due:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* Sprint C R2.5 — applying state: subtle opacity pulse so user sees the
+   write is in flight (Codex R2-C-3 required visual feedback for the
+   in-flight guard dropping rapid re-entry). */
+.task-due--applying,
+.priority-pill--applying {
+  opacity: 0.55;
+  cursor: progress;
+}
+@keyframes task-row-applying-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.85; }
+}
+.task-due--applying,
+.priority-pill--applying {
+  animation: task-row-applying-pulse 1200ms ease-in-out infinite;
+}
 
 /* ─── Sprint C — fuzzy combobox in QuickAdd (replaces native <select>) ──── */
 

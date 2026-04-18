@@ -117,24 +117,32 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   //               entityPath returned.
   // Entity task → editTaskFieldApi against task.entityPath.
   //
-  // Round-1 + R2 convergence:
-  //   - C1-1 — on mid-chain failure of a multi-field write, best-effort
-  //     ROLLBACK the previously-committed fields in REVERSE order so the
-  //     task doesn't settle into a half-updated state.
-  //   - C1-3 — in-flight guard (`applyingRef`) prevents rapid re-entry.
-  //   - R2 C-R2-2 — hung-server guard: 30s hard timeout resets
-  //     applyingRef so a single stalled request can't permanently
-  //     block further edits on the row.
-  //   - R2 Gemini ATOMIC-ROLLBACK-INCOMPLETE — the inline branch now
-  //     also tracks committed edits and rolls them back in reverse
-  //     (previously only edits[0] was reverted, which was adequate for
-  //     the 2-field priority case but broken for any 3+-field chain).
-  //   - R2 C-R2-1 — on rollback failure (rollback API itself errors),
-  //     fire a vault refetch so SSE/read settles UI to actual server
-  //     state rather than leaving the row rendered as though the
-  //     attempted change succeeded.
+  // Convergence-stabilized strategy (R2.5 rewrite replacing R2's rollback):
+  //   - On any mid-chain failure, do NOT attempt client-side rollback.
+  //     Client-held prop values ("what the row rendered from") are a
+  //     stale snapshot — rolling back with them can clobber newer
+  //     server state written by another editor/agent between read and
+  //     write (Codex R2-C-4 lost-update race). Instead, force a vault
+  //     refetch — SSE/read gives the user ground truth, and the error
+  //     dot tells them the write didn't fully land.
+  //   - `applyingRef` still in-flight-guards rapid re-entry so the
+  //     inline-promote path doesn't race against its own stale prop.
+  //   - 30s timeout resets the guard so a stalled server can't
+  //     permanently block further edits on the row.
+  //   - The rollbackValue field in each edit is kept around for future
+  //     use (e.g. optimistic UI) but no longer consulted here.
   const applyingRef = useRef(false);
+  const [isApplying, setIsApplying] = useState(false);
   const APPLY_TIMEOUT_MS = 30_000;
+
+  async function refetchVault(): Promise<void> {
+    try {
+      const v = await fetchVault();
+      useSidebarStore.getState().setVault(v);
+    } catch {
+      // SSE will catch up; nothing actionable from the client.
+    }
+  }
 
   async function applyFieldEdits(
     edits: Array<{ field: string; value: string | number | null; rollbackValue: string | number | null }>
@@ -142,43 +150,20 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     if (edits.length === 0) return;
     if (applyingRef.current) return;
     applyingRef.current = true;
+    setIsApplying(true);
 
-    // R2 C-R2-2 — hard timeout so the guard can never latch forever.
+    // Hard timeout prevents the in-flight guard from latching forever
+    // on a stalled request.
     const timeoutId = setTimeout(() => {
       applyingRef.current = false;
+      setIsApplying(false);
       showError();
     }, APPLY_TIMEOUT_MS);
 
     try {
       clearTaskError(task.id);
 
-      const committed: Array<{ field: string; rollbackValue: string | number | null }> = [];
-
-      // Helper — roll back everything in `committed` against `entityPath`.
-      // On rollback failure, trigger a vault refetch to force UI to settle.
-      async function rollbackAll(entityPath: string): Promise<void> {
-        let rollbackOk = true;
-        for (let i = committed.length - 1; i >= 0; i--) {
-          const c = committed[i];
-          const r = await editTaskFieldApi({ entityPath, field: c.field, value: c.rollbackValue });
-          if (!r.ok) {
-            rollbackOk = false;
-            break;
-          }
-        }
-        if (!rollbackOk) {
-          // R2 C-R2-1 — rollback itself failed; force a vault refetch
-          // to resync the UI with actual server state.
-          try {
-            const v = await fetchVault();
-            useSidebarStore.getState().setVault(v);
-          } catch {
-            // Refetch also failed — user will see stale UI until SSE recovers.
-          }
-        }
-      }
-
-      // Inline → promote-and-edit for the FIRST field, capture new entityPath
+      // Inline → promote-and-edit for the FIRST field, capture new entityPath.
       if (task.source === "inline") {
         if (!tasksPath || task.line === undefined) return;
         const first = edits[0];
@@ -190,41 +175,39 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
         });
         if (!r.ok) {
           showError();
+          await refetchVault();
           return;
         }
         const newEntityPath = r.data.entityPath;
         if (!newEntityPath) return;
-        committed.push({ field: edits[0].field, rollbackValue: edits[0].rollbackValue });
 
         for (let i = 1; i < edits.length; i++) {
           const e = edits[i];
           const r2 = await editTaskFieldApi({ entityPath: newEntityPath, field: e.field, value: e.value });
           if (!r2.ok) {
-            await rollbackAll(newEntityPath);
             showError();
+            await refetchVault();
             return;
           }
-          committed.push({ field: e.field, rollbackValue: e.rollbackValue });
         }
         return;
       }
 
-      // Entity path: sequential field-edit calls with rollback of prior
-      // commits on any mid-chain failure.
+      // Entity path: sequential field-edit calls; refetch on any failure.
       const entityPath = task.entityPath;
       if (!entityPath) return;
       for (const e of edits) {
         const r = await editTaskFieldApi({ entityPath, field: e.field, value: e.value });
         if (!r.ok) {
-          await rollbackAll(entityPath);
           showError();
+          await refetchVault();
           return;
         }
-        committed.push({ field: e.field, rollbackValue: e.rollbackValue });
       }
     } finally {
       clearTimeout(timeoutId);
       applyingRef.current = false;
+      setIsApplying(false);
     }
   }
 
@@ -454,11 +437,13 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
             <button
               ref={dueBtnRef}
               type="button"
-              className={`task-due${isOverdueLocal ? " task-due--overdue" : isDueTodayLocal ? " task-due--today" : ""}`}
+              className={`task-due${isOverdueLocal ? " task-due--overdue" : isDueTodayLocal ? " task-due--today" : ""}${isApplying ? " task-due--applying" : ""}`}
               title={task.due ?? "Set due date"}
               aria-label={task.due ? `Due ${task.due}` : "Set due date"}
               aria-haspopup="menu"
               aria-expanded={openPopover === "due"}
+              aria-busy={isApplying}
+              disabled={isApplying}
               onClick={(e) => {
                 e.stopPropagation();
                 setOpenPopover((p) => (p === "due" ? null : "due"));
@@ -472,11 +457,13 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
             <button
               ref={priorityBtnRef}
               type="button"
-              className={`priority-pill priority-pill--${task.priority ? RANK_PILL_VARIANT[task.priority.rank] ?? "p4" : "none"}`}
+              className={`priority-pill priority-pill--${task.priority ? RANK_PILL_VARIANT[task.priority.rank] ?? "p4" : "none"}${isApplying ? " priority-pill--applying" : ""}`}
               title={task.priority ? `Priority score: ${task.priority.score}` : "Set priority"}
               aria-label={task.priority ? `Priority ${RANK_PILL_LABEL[task.priority.rank] ?? "?"}` : "Set priority"}
               aria-haspopup="menu"
               aria-expanded={openPopover === "priority"}
+              aria-busy={isApplying}
+              disabled={isApplying}
               onClick={(e) => {
                 e.stopPropagation();
                 setOpenPopover((p) => (p === "priority" ? null : "priority"));
