@@ -210,6 +210,11 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
               aria-autocomplete="list"
               aria-expanded={pickerOpen}
               aria-controls="combobox-list"
+              aria-activedescendant={
+                pickerOpen && filtered.length > 0
+                  ? `combobox-option-${pickerActiveIdx}`
+                  : undefined
+              }
               aria-label="Target project"
               value={pickerDisplay}
               placeholder={currentProject?.title ?? "Project"}
@@ -229,6 +234,7 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
                 className="combobox-list"
                 role="listbox"
                 onMouseDown={handlePickerListMouseDown}
+                onTouchStart={handlePickerListMouseDown}
               >
                 {filtered.length === 0 ? (
                   <div className="combobox-option combobox-option--empty">
@@ -236,17 +242,26 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
                   </div>
                 ) : (
                   filtered.map((hit, idx) => (
-                    <button
+                    <div
                       key={hit.item.slug}
-                      type="button"
+                      id={`combobox-option-${idx}`}
                       role="option"
                       aria-selected={idx === pickerActiveIdx}
                       className={`combobox-option${idx === pickerActiveIdx ? " active" : ""}`}
                       onMouseEnter={() => setPickerActiveIdx(idx)}
-                      onClick={() => selectPickerIdx(idx)}
+                      onMouseDown={(e) => {
+                        // Use mousedown (fires before input blur) so the
+                        // selection lands before the picker closes on blur.
+                        e.preventDefault();
+                        selectPickerIdx(idx);
+                      }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        selectPickerIdx(idx);
+                      }}
                     >
                       {hit.item.title}
-                    </button>
+                    </div>
                   ))
                 )}
               </div>
