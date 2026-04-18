@@ -1,9 +1,0 @@
-- generic [ref=e3]:
-  - banner [ref=e4]:
-    - heading "Agenda · Sat, Apr 18" [level=1] [ref=e5]
-    - button "Theme selector" [ref=e7] [cursor=pointer]:
-      - img [ref=e8]
-  - status [ref=e11]
-  - tablist [ref=e12]:
-    - tab "Agenda" [selected] [ref=e13] [cursor=pointer]
-    - tab "Projects" [ref=e14] [cursor=pointer]

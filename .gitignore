@@ -3,3 +3,5 @@ dist/
 .DS_Store
 *.log
 screenshots/*/*.png.tmp
+*.playwright-cli/
+.playwright-cli/
