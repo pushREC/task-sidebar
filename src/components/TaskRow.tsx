@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { Circle, CheckCircle2 } from "lucide-react";
+import { Circle, CheckCircle2, Pencil } from "lucide-react";
 import type { Task, Project } from "../api.js";
 import {
   toggleTaskApi,
   editTaskApi,
   moveTaskApi,
+  editTaskFieldApi,
+  promoteAndEditTaskApi,
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
 import { TaskDetailPanel } from "./TaskDetailPanel.js";
 import { relativeDue, parseISODate, diffDays } from "../lib/format.js";
+import { DuePopover } from "./DuePopover.js";
+import { PriorityPopover } from "./PriorityPopover.js";
 
 interface TaskRowProps {
   task: Task;
@@ -26,8 +30,19 @@ interface TaskRowProps {
 
 const ERROR_DOT_DURATION_MS = 2000;
 
-// Map priority rank to a short display label
-const RANK_LABEL: Record<string, string> = { high: "H", medium: "M", low: "L" };
+// Sprint C D19/V2B — rank → P1/P2/P3/P4 pill mapping.
+const RANK_PILL_LABEL: Record<string, string> = {
+  critical: "P1",
+  high: "P2",
+  medium: "P3",
+  low: "P4",
+};
+const RANK_PILL_VARIANT: Record<string, string> = {
+  critical: "p1",
+  high: "p2",
+  medium: "p3",
+  low: "p4",
+};
 
 export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: TaskRowProps) {
   const taskId = task.id.replace(/[^a-zA-Z0-9-_]/g, "_");
@@ -46,6 +61,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   const [moveSlug, setMoveSlug] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sprint C — popover state + anchor refs for due / priority / pencil.
+  const [openPopover, setOpenPopover] = useState<"due" | "priority" | null>(null);
+  const dueBtnRef = useRef<HTMLButtonElement | null>(null);
+  const priorityBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const hasError = errorTaskIds.has(task.id);
   const isSelected = selectedTaskId === taskId;
@@ -87,6 +107,72 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
       clearTaskError(task.id);
       errorTimerRef.current = null;
     }, ERROR_DOT_DURATION_MS);
+  }
+
+  // ── Sprint C: inline field edit (due / impact / urgency) ─────────────────
+  //
+  // Inline task → first edit promotes to entity via promote-and-edit, then
+  //               any follow-up edits use editTaskFieldApi against the new
+  //               entityPath returned.
+  // Entity task → editTaskFieldApi against task.entityPath.
+  //
+  // `setTwo` chains a second write after a successful first — used by the
+  // priority popover to write impact + urgency in sequence.
+  async function applyFieldEdits(
+    edits: Array<{ field: string; value: string | number | null }>
+  ): Promise<void> {
+    if (edits.length === 0) return;
+    clearTaskError(task.id);
+    let entityPath = task.entityPath;
+
+    // Inline → promote-and-edit for the FIRST field, capture new entityPath
+    if (task.source === "inline") {
+      if (!tasksPath || task.line === undefined) return;
+      const first = edits[0];
+      const r = await promoteAndEditTaskApi({
+        tasksPath,
+        line: task.line,
+        field: first.field,
+        value: first.value,
+      });
+      if (!r.ok) {
+        showError();
+        return;
+      }
+      const newEntityPath = r.data.entityPath;
+      if (!newEntityPath) return;
+      entityPath = newEntityPath;
+      // Remaining edits go to the new entity path.
+      for (let i = 1; i < edits.length; i++) {
+        const e = edits[i];
+        const r2 = await editTaskFieldApi({ entityPath: newEntityPath, field: e.field, value: e.value });
+        if (!r2.ok) {
+          showError();
+          return;
+        }
+      }
+      return;
+    }
+
+    // Entity path: sequential field-edit calls.
+    if (!entityPath) return;
+    for (const e of edits) {
+      const r = await editTaskFieldApi({ entityPath, field: e.field, value: e.value });
+      if (!r.ok) {
+        showError();
+        return;
+      }
+    }
+  }
+
+  function handleDuePick(iso: string | null) {
+    void applyFieldEdits([{ field: "due", value: iso }]);
+  }
+  function handlePriorityPick(impact: string | null, urgency: string | null) {
+    void applyFieldEdits([
+      { field: "impact", value: impact },
+      { field: "urgency", value: urgency },
+    ]);
   }
 
   // ── Inline edit ───────────────────────────────────────────────────────────
@@ -299,22 +385,42 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
             {task.projectTitle && (
               <span className="task-project">{task.projectTitle}</span>
             )}
-            {task.due && (
-              <span
-                className={`task-due${isOverdueLocal ? " task-due--overdue" : isDueTodayLocal ? " task-due--today" : ""}`}
-                title={task.due}
-              >
-                {relativeDue(task.due, nowStamp)}
-              </span>
-            )}
-            {task.priority && (
-              <span
-                className={`task-rank-badge task-rank-badge--${task.priority.rank}`}
-                title={`Priority score: ${task.priority.score}`}
-              >
-                {RANK_LABEL[task.priority.rank] ?? task.priority.rank.charAt(0).toUpperCase()}
-              </span>
-            )}
+            {/* Sprint C F04 — due chip is a button opening DuePopover.
+                Renders even when unset so users can quickly assign a date;
+                the "—" label + hover border cue affordance. */}
+            <button
+              ref={dueBtnRef}
+              type="button"
+              className={`task-due${isOverdueLocal ? " task-due--overdue" : isDueTodayLocal ? " task-due--today" : ""}`}
+              title={task.due ?? "Set due date"}
+              aria-label={task.due ? `Due ${task.due}` : "Set due date"}
+              aria-haspopup="menu"
+              aria-expanded={openPopover === "due"}
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenPopover((p) => (p === "due" ? null : "due"));
+              }}
+            >
+              {task.due ? relativeDue(task.due, nowStamp) : "—"}
+            </button>
+            {/* Sprint C F05 + D19/V2B — priority pill is a button opening
+                PriorityPopover. Rank-to-Pn mapping:
+                  critical→P1, high→P2, medium→P3, low→P4, null→none */}
+            <button
+              ref={priorityBtnRef}
+              type="button"
+              className={`priority-pill priority-pill--${task.priority ? RANK_PILL_VARIANT[task.priority.rank] ?? "p4" : "none"}`}
+              title={task.priority ? `Priority score: ${task.priority.score}` : "Set priority"}
+              aria-label={task.priority ? `Priority ${RANK_PILL_LABEL[task.priority.rank] ?? "?"}` : "Set priority"}
+              aria-haspopup="menu"
+              aria-expanded={openPopover === "priority"}
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenPopover((p) => (p === "priority" ? null : "priority"));
+              }}
+            >
+              {task.priority ? RANK_PILL_LABEL[task.priority.rank] ?? "?" : ""}
+            </button>
             {hasError && (
               <>
                 <span className="task-error-dot" title="Write failed" aria-hidden="true" />
@@ -325,9 +431,43 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
                 <span aria-live="polite" className="sr-only">Write failed.</span>
               </>
             )}
+            {/* Sprint C F10 — pencil on hover/selected. Keyboard `E` also
+                triggers edit via useKeyboardNav → onEnterEdit. The icon
+                is visually hidden by default (opacity 0) and only becomes
+                focusable on hover, so Tab order is uncluttered. */}
+            <button
+              type="button"
+              className="task-edit-affordance"
+              aria-label="Edit task text"
+              tabIndex={isSelected ? 0 : -1}
+              onClick={(e) => {
+                e.stopPropagation();
+                startEditing();
+              }}
+            >
+              <Pencil size={12} strokeWidth={1.5} />
+            </button>
           </div>
         </div>
       </div>
+      {/* Sprint C F04/F05 — popovers render outside the row surface so
+          they can spill below the row without clipping the row layout. */}
+      {openPopover === "due" && (
+        <DuePopover
+          anchorRef={dueBtnRef}
+          currentDue={task.due}
+          onClose={() => setOpenPopover(null)}
+          onPick={handleDuePick}
+        />
+      )}
+      {openPopover === "priority" && (
+        <PriorityPopover
+          anchorRef={priorityBtnRef}
+          currentRank={task.priority?.rank ?? null}
+          onClose={() => setOpenPopover(null)}
+          onPick={handlePriorityPick}
+        />
+      )}
       {isExpanded && (
         <TaskDetailPanel task={task} tasksPath={tasksPath} />
       )}

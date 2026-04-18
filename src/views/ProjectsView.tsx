@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, FolderOpen } from "lucide-react";
+import { ChevronRight, FolderOpen, AlertTriangle, Circle } from "lucide-react";
 import type { Project } from "../api.js";
 import { TaskRow } from "../components/TaskRow.js";
 import { ProjectDetailPanel } from "../components/ProjectDetailPanel.js";
@@ -64,6 +64,20 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
         const openTasks = project.tasks.filter((t) => !t.done);
         const dueLabel = dueDaysLabel(project.due);
 
+        // Sprint C S06 — project health signals. Prefer server-computed
+        // counts (Sprint A verified parent-goal + inferred fields); fall
+        // back to client counts for robustness when server omitted them.
+        const overdueN = project.tasksOverdueCount ??
+          project.tasks.filter((t) => t.overdue && !t.done).length;
+        const inProgressN = project.tasks.filter(
+          (t) => t.status === "in-progress" && !t.done
+        ).length;
+        const doneN = project.tasksDoneCount ??
+          project.tasks.filter((t) => t.done).length;
+        const notDoneN = project.tasksNotDoneCount ??
+          project.tasks.filter((t) => !t.done && t.status !== "cancelled").length;
+        const totalN = doneN + notDoneN;
+
         // B10 — split the single click into two intents:
         //   chevron click → expand/collapse the task list (existing behavior)
         //   header-body click → toggle the project detail panel
@@ -105,9 +119,28 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
               >
                 <span className="project-title">{project.title}</span>
               </button>
-              {openTasks.length > 0 && (
-                <span className="count-badge">{openTasks.length}</span>
-              )}
+              {/* Sprint C S06 — health-signal chips. Rendered only when
+                  meaningful so narrow layouts stay quiet. Order matches
+                  urgency: overdue > in-progress > done/total ratio. */}
+              <span className="project-health" aria-label={`${overdueN} overdue, ${inProgressN} in progress, ${doneN} of ${totalN} done`}>
+                {overdueN > 0 && (
+                  <span className="project-health-chip project-health-chip--overdue" title={`${overdueN} overdue`}>
+                    <AlertTriangle size={10} strokeWidth={2} />
+                    <span>{overdueN}</span>
+                  </span>
+                )}
+                {inProgressN > 0 && (
+                  <span className="project-health-chip project-health-chip--in-progress" title={`${inProgressN} in progress`}>
+                    <Circle size={8} strokeWidth={0} fill="currentColor" />
+                    <span>{inProgressN}</span>
+                  </span>
+                )}
+                {totalN > 0 && (
+                  <span className="project-health-chip" title={`${doneN} of ${totalN} done`}>
+                    <span>{doneN}/{totalN}</span>
+                  </span>
+                )}
+              </span>
               {dueLabel && (
                 <span className="project-due-chip">{dueLabel}</span>
               )}
