@@ -80,15 +80,21 @@ export function pendingReconcileCount(): number {
  */
 export function drainPendingReconciles(): number {
   const count = pending.size;
+  // Clear all pending timers first.
   for (const [, entry] of pending) {
     clearTimeout(entry.timer);
+  }
+  pending.clear();
+  // R2 (Gemini G-2) — fireStatusReconcile takes no args and reconciles
+  // the whole vault; spawning it N times during shutdown was wasteful.
+  // A single call when count > 0 covers every queued path.
+  if (count > 0) {
     try {
       fireStatusReconcile();
     } catch {
       // Best-effort during shutdown.
     }
   }
-  pending.clear();
   return count;
 }
 

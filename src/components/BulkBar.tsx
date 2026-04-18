@@ -86,6 +86,11 @@ export function BulkBar({ projects }: BulkBarProps) {
       return;
     }
 
+    // R2 (Gemini G-1) — finally-scoped isProcessing reset so an exception
+    // thrown by refreshVault / setPendingUndo / anywhere post-loop doesn't
+    // leave the bulk bar permanently disabled for the session.
+    try {
+
     // R1 UX-002 (Gemini) — capture previous status per task so revert
     // restores the EXACT prior state (not just "open"). Closure keeps
     // the snapshot alive until the undo window expires.
@@ -154,8 +159,10 @@ export function BulkBar({ projects }: BulkBarProps) {
 
     setPendingUndo(undo);
     await refreshVault();
-    setProgress(null);
     clearSelection();
+    } finally {
+      setProgress(null);
+    }
   }
 
   // Bulk Cancel — transition all selected entity tasks to "cancelled".
@@ -170,6 +177,8 @@ export function BulkBar({ projects }: BulkBarProps) {
     setFailures(0);
     let localFailures = 0;
 
+    // R2 — finally-scoped progress reset (matches handleBulkDone).
+    try {
     const affected: Array<{ task: Task; tasksPath: string; prevStatus: string }> = [];
     for (let i = 0; i < entries.length; i++) {
       const { task, tasksPath } = entries[i];
@@ -220,8 +229,10 @@ export function BulkBar({ projects }: BulkBarProps) {
       },
     });
     await refreshVault();
-    setProgress(null);
     clearSelection();
+    } finally {
+      setProgress(null);
+    }
   }
 
   // Bulk Delete — entity tasks unlinked, inline tasks line-removed.
@@ -236,6 +247,8 @@ export function BulkBar({ projects }: BulkBarProps) {
     setFailures(0);
     let deletedCount = 0;
     let localFailures = 0;
+
+    try {
     for (let i = 0; i < entries.length; i++) {
       const { task, tasksPath } = entries[i];
       try {
@@ -260,7 +273,6 @@ export function BulkBar({ projects }: BulkBarProps) {
     setFailures(localFailures);
 
     await refreshVault();
-    setProgress(null);
     clearSelection();
 
     // No undo window for delete — explicit decision. The toast would be
@@ -268,7 +280,8 @@ export function BulkBar({ projects }: BulkBarProps) {
     // Could surface a separate "deleted N tasks" confirmation banner in
     // a future sprint; for now the refresh is visible enough.
     if (deletedCount > 0) {
-      // Flash a non-undoable pending so the user has feedback.
+      // Flash a non-undoable pending so the user has feedback. UndoToast
+      // renders the action==="delete" variant (X dismiss, no fake Undo).
       const label = deletedCount === 1 ? "Task deleted" : `${deletedCount} tasks deleted`;
       setPendingUndo({
         action: "delete",
@@ -277,9 +290,13 @@ export function BulkBar({ projects }: BulkBarProps) {
         label,
         undoneAt: Date.now(),
         revert: async () => {
-          // No-op — delete is terminal. The label alone provides feedback.
+          // No-op — delete is terminal. UndoToast hides the Undo button
+          // for this variant; this closure never runs.
         },
       });
+    }
+    } finally {
+      setProgress(null);
     }
   }
 
