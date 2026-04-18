@@ -136,20 +136,38 @@ export function Popover({ anchorRef, onClose, ariaLabel, children }: PopoverProp
     first?.focus();
 
     function handleKeyDown(e: KeyboardEvent) {
+      // Gemini A11Y-POPOVER-DATE-TRAP — when focus is INSIDE a text /
+      // date / number input, the native widget owns Tab + Arrow keys
+      // for segment navigation (day/month/year). Don't hijack them.
+      // Tab still leaves the popover when the input is the last
+      // focusable (falls through to focusout → close).
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active.tagName === "INPUT") {
+        const type = (active as HTMLInputElement).type;
+        if (type === "date" || type === "text" || type === "number" || type === "datetime-local" || type === "time") {
+          return; // let the input handle its own keys
+        }
+      }
+
       const focusables = Array.from(
         pop!.querySelectorAll<HTMLElement>('[role="menuitem"], input, button')
       ).filter((el) => !el.hasAttribute("disabled"));
       if (focusables.length === 0) return;
-      const active = document.activeElement as HTMLElement | null;
-      const idx = active ? focusables.indexOf(active) : -1;
-
+      // Opus C-R2-3 — if active element is outside the focusables list
+      // (idx === -1), treat "forward" as 0 and "backward" as last, so
+      // wrap math doesn't land on the penultimate item.
+      const rawIdx = active ? focusables.indexOf(active) : -1;
       if (e.key === "Tab" || e.key === "ArrowDown") {
         e.preventDefault();
-        const next = focusables[(idx + 1 + focusables.length) % focusables.length];
+        const next = rawIdx === -1
+          ? focusables[0]
+          : focusables[(rawIdx + 1) % focusables.length];
         next.focus();
       } else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
         e.preventDefault();
-        const prev = focusables[(idx - 1 + focusables.length) % focusables.length];
+        const prev = rawIdx === -1
+          ? focusables[focusables.length - 1]
+          : focusables[(rawIdx - 1 + focusables.length) % focusables.length];
         prev.focus();
       }
     }

@@ -13,6 +13,7 @@ import { TaskDetailPanel } from "./TaskDetailPanel.js";
 import { relativeDue, parseISODate, diffDays } from "../lib/format.js";
 import { DuePopover } from "./DuePopover.js";
 import { PriorityPopover } from "./PriorityPopover.js";
+import { fetchVault } from "../api.js";
 
 interface TaskRowProps {
   task: Task;
@@ -116,23 +117,66 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   //               entityPath returned.
   // Entity task → editTaskFieldApi against task.entityPath.
   //
-  // Round-1 convergence:
+  // Round-1 + R2 convergence:
   //   - C1-1 — on mid-chain failure of a multi-field write, best-effort
-  //     ROLLBACK the first (previous-value) so the task doesn't settle
-  //     into a half-updated state. "Best-effort" because the rollback
-  //     itself could fail — if so, error-dot fires and user can retry.
-  //   - C1-3 — in-flight guard (`applyingRef`) prevents a rapid second
-  //     click from re-entering promote-and-edit against the stale
-  //     `source === "inline"` prop before SSE has refreshed it.
+  //     ROLLBACK the previously-committed fields in REVERSE order so the
+  //     task doesn't settle into a half-updated state.
+  //   - C1-3 — in-flight guard (`applyingRef`) prevents rapid re-entry.
+  //   - R2 C-R2-2 — hung-server guard: 30s hard timeout resets
+  //     applyingRef so a single stalled request can't permanently
+  //     block further edits on the row.
+  //   - R2 Gemini ATOMIC-ROLLBACK-INCOMPLETE — the inline branch now
+  //     also tracks committed edits and rolls them back in reverse
+  //     (previously only edits[0] was reverted, which was adequate for
+  //     the 2-field priority case but broken for any 3+-field chain).
+  //   - R2 C-R2-1 — on rollback failure (rollback API itself errors),
+  //     fire a vault refetch so SSE/read settles UI to actual server
+  //     state rather than leaving the row rendered as though the
+  //     attempted change succeeded.
   const applyingRef = useRef(false);
+  const APPLY_TIMEOUT_MS = 30_000;
+
   async function applyFieldEdits(
     edits: Array<{ field: string; value: string | number | null; rollbackValue: string | number | null }>
   ): Promise<void> {
     if (edits.length === 0) return;
-    if (applyingRef.current) return; // C1-3 drop rapid re-entry
+    if (applyingRef.current) return;
     applyingRef.current = true;
+
+    // R2 C-R2-2 — hard timeout so the guard can never latch forever.
+    const timeoutId = setTimeout(() => {
+      applyingRef.current = false;
+      showError();
+    }, APPLY_TIMEOUT_MS);
+
     try {
       clearTaskError(task.id);
+
+      const committed: Array<{ field: string; rollbackValue: string | number | null }> = [];
+
+      // Helper — roll back everything in `committed` against `entityPath`.
+      // On rollback failure, trigger a vault refetch to force UI to settle.
+      async function rollbackAll(entityPath: string): Promise<void> {
+        let rollbackOk = true;
+        for (let i = committed.length - 1; i >= 0; i--) {
+          const c = committed[i];
+          const r = await editTaskFieldApi({ entityPath, field: c.field, value: c.rollbackValue });
+          if (!r.ok) {
+            rollbackOk = false;
+            break;
+          }
+        }
+        if (!rollbackOk) {
+          // R2 C-R2-1 — rollback itself failed; force a vault refetch
+          // to resync the UI with actual server state.
+          try {
+            const v = await fetchVault();
+            useSidebarStore.getState().setVault(v);
+          } catch {
+            // Refetch also failed — user will see stale UI until SSE recovers.
+          }
+        }
+      }
 
       // Inline → promote-and-edit for the FIRST field, capture new entityPath
       if (task.source === "inline") {
@@ -150,20 +194,17 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
         }
         const newEntityPath = r.data.entityPath;
         if (!newEntityPath) return;
-        // Remaining edits go to the new entity path.
+        committed.push({ field: edits[0].field, rollbackValue: edits[0].rollbackValue });
+
         for (let i = 1; i < edits.length; i++) {
           const e = edits[i];
           const r2 = await editTaskFieldApi({ entityPath: newEntityPath, field: e.field, value: e.value });
           if (!r2.ok) {
-            // C1-1 — best-effort rollback of the already-committed field.
-            await editTaskFieldApi({
-              entityPath: newEntityPath,
-              field: edits[0].field,
-              value: edits[0].rollbackValue,
-            });
+            await rollbackAll(newEntityPath);
             showError();
             return;
           }
+          committed.push({ field: e.field, rollbackValue: e.rollbackValue });
         }
         return;
       }
@@ -172,21 +213,17 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
       // commits on any mid-chain failure.
       const entityPath = task.entityPath;
       if (!entityPath) return;
-      const committed: Array<{ field: string; rollbackValue: string | number | null }> = [];
       for (const e of edits) {
         const r = await editTaskFieldApi({ entityPath, field: e.field, value: e.value });
         if (!r.ok) {
-          // C1-1 — roll back previously-committed fields in reverse order.
-          for (let i = committed.length - 1; i >= 0; i--) {
-            const c = committed[i];
-            await editTaskFieldApi({ entityPath, field: c.field, value: c.rollbackValue });
-          }
+          await rollbackAll(entityPath);
           showError();
           return;
         }
         committed.push({ field: e.field, rollbackValue: e.rollbackValue });
       }
     } finally {
+      clearTimeout(timeoutId);
       applyingRef.current = false;
     }
   }
