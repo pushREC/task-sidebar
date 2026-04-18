@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vault-sidebar · Visual Previews (Sprint 0)</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <!-- Geist Sans + Mono (matches src/styles.css lock #2) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.3/index.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/geist-mono@5.0.3/index.css" />
+  <style>
+    /* ─── Tokens — lifted verbatim from src/styles.css + Sprint-B additions ──── */
+    :root {
+      --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+      --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+      /* Dark theme (default) */
+      --bg: #0a0a0a;
+      --bg-surface: #141414;
+      --bg-hover: #1c1c1c;
+      --text-primary: #e8e6e1;
+      --text-secondary: #9a9590;
+      --separator: rgba(255, 255, 255, 0.06);
+
+      /* Role colors — Lock #1 reopened, 3 role-colors (Sprint B D3/D22) */
+      --accent: #d84a3e;           /* red — critical/overdue/action */
+      --accent-dim: #a63228;
+      --ok: #3ea372;               /* emerald — in-progress/agent/success */
+      --ok-dim: #2a8558;
+
+      /* Priority tokens — Sprint C D19 */
+      --priority-p1: #d84a3e;      /* red — critical */
+      --priority-p2: #e88a3e;      /* amber — high */
+      --priority-p3: #6b7280;      /* gray — medium */
+      --priority-p4: rgba(155,150,145,0.4); /* faint — low */
+    }
+    [data-theme="light"] {
+      --bg: #faf9f5;
+      --bg-surface: #f4f3ef;
+      --bg-hover: #eeede8;
+      --text-primary: #1a1917;
+      --text-secondary: #5a5955;
+      --separator: rgba(26, 25, 23, 0.08);
+      --accent: #a63228;
+      --accent-dim: #7a2420;
+      --ok: #2a8558;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+      letter-spacing: -0.01em;
+      padding: 24px 16px 64px;
+    }
+
+    .page-header {
+      max-width: 1200px;
+      margin: 0 auto 32px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--separator);
+    }
+    .page-title {
+      font-size: 20px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .page-sub {
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+    .theme-toggle {
+      float: right;
+      background: var(--bg-surface);
+      color: var(--text-secondary);
+      border: 1px solid var(--separator);
+      padding: 4px 10px;
+      font-family: inherit;
+      font-size: 11px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .theme-toggle:hover { color: var(--text-primary); }
+
+    /* Nav anchors */
+    .page-nav {
+      max-width: 1200px;
+      margin: 0 auto 32px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 11px;
+    }
+    .page-nav a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid var(--separator);
+      border-radius: 4px;
+      transition: color 150ms ease-out, border-color 150ms ease-out;
+    }
+    .page-nav a:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* Decision section */
+    .decision {
+      max-width: 1200px;
+      margin: 0 auto 56px;
+    }
+    .decision-heading {
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .decision-prompt {
+      color: var(--text-secondary);
+      font-size: 12px;
+      margin-bottom: 20px;
+    }
+    .decision-prompt code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: var(--bg-surface);
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+
+    .variants {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    }
+
+    .variant {
+      background: var(--bg-surface);
+      border: 1px solid var(--separator);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .variant-head {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--separator);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .variant-id {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-secondary);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .variant-label {
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .variant-body {
+      flex: 1;
+      padding: 0;
+      background: var(--bg);
+    }
+    .variant-note {
+      padding: 10px 14px;
+      font-size: 10px;
+      color: var(--text-secondary);
+      border-top: 1px solid var(--separator);
+      background: var(--bg-surface);
+    }
+
+    /* ─── Shared task row primitives (match src/components/TaskRow.tsx + src/styles.css) ─── */
+    .sample-list {
+      padding: 4px 0;
+    }
+    .sample-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 14px;
+      position: relative;
+      border-left: 2px solid transparent;
+    }
+    .sample-row + .sample-row::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 14px;
+      right: 14px;
+      height: 1px;
+      background: var(--separator);
+    }
+    .sample-row .circle {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1.5px solid var(--text-secondary);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .sample-row .circle--done {
+      border-color: var(--text-secondary);
+      background: var(--text-secondary);
+      position: relative;
+    }
+    .sample-row .circle--done::after {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 5px;
+      width: 8px;
+      height: 3px;
+      border-left: 1.5px solid var(--bg);
+      border-bottom: 1.5px solid var(--bg);
+      transform: rotate(-45deg);
+    }
+    .sample-row .circle--playcircle {
+      width: 16px; height: 16px;
+      border: 1.5px solid var(--ok);
+      border-radius: 50%;
+      position: relative;
+    }
+    .sample-row .circle--playcircle::after {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 3px;
+      width: 0;
+      height: 0;
+      border-left: 5px solid var(--ok);
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+    }
+    .sample-content {
+      flex: 1;
+      min-width: 0;
+    }
+    .sample-title {
+      font-size: 13px;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sample-title--done {
+      text-decoration: line-through;
+      color: var(--text-secondary);
+      opacity: 0.7;
+    }
+    .sample-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 3px;
+      flex-wrap: wrap;
+    }
+    .sample-project {
+      font-size: 11px;
+      color: var(--text-secondary);
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sample-due {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-secondary);
+    }
+    .sample-due--overdue,
+    .sample-due--today {
+      color: var(--accent);
+    }
+
+    /* Blocked glyph */
+    .sample-row--blocked {
+      opacity: 0.6;
+    }
+    .sample-row--blocked .sample-title::after {
+      content: " ⧖";
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      margin-left: 2px;
+    }
+
+    /* ─── V1: In-progress row treatment ──────────────────────────────── */
+    /* V1a — static stripe */
+    .v1a .sample-row--ip { border-left-color: var(--ok); }
+    /* V1b — stripe + opacity breathing */
+    .v1b .sample-row--ip {
+      border-left-color: var(--ok);
+      animation: breathing 2s ease-in-out infinite;
+    }
+    @keyframes breathing {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.85; }
+    }
+    /* V1c — dot after due chip */
+    .v1c .sample-row--ip .sample-meta::after {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ok);
+      margin-left: 4px;
+    }
+    /* V1d — PlayCircle glyph */
+    /* (handled by .circle--playcircle class in markup) */
+
+    /* ─── V2: Priority pill style ────────────────────────────────────── */
+    .pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      line-height: 1.4;
+    }
+    /* V2a — single-letter C/H/M/L with 4-color semantics */
+    .pill--chml.pill--c { background: var(--priority-p1); color: #fff; }
+    .pill--chml.pill--h { border: 1px solid var(--priority-p1); color: var(--priority-p1); }
+    .pill--chml.pill--m { border: 1px solid var(--priority-p3); color: var(--text-primary); }
+    .pill--chml.pill--l { color: var(--priority-p4); }
+    /* V2b — P1/P2/P3/P4 pills */
+    .pill--p1 { background: color-mix(in srgb, var(--priority-p1) 22%, transparent); color: var(--priority-p1); border: 1px solid color-mix(in srgb, var(--priority-p1) 40%, transparent); }
+    .pill--p2 { background: color-mix(in srgb, var(--priority-p2) 22%, transparent); color: var(--priority-p2); border: 1px solid color-mix(in srgb, var(--priority-p2) 40%, transparent); }
+    .pill--p3 { background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--separator); }
+    .pill--p4 { color: var(--priority-p4); border: 1px solid var(--separator); background: transparent; }
+    /* V2c — Lucide-style arrows + alert */
+    .pill--icon { border: none; padding: 0; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; }
+    .pill--icon svg { width: 12px; height: 12px; }
+    .pill--icon.pill--c { color: var(--priority-p1); }
+    .pill--icon.pill--h { color: var(--priority-p2); }
+    .pill--icon.pill--m { color: var(--priority-p3); }
+    .pill--icon.pill--l { color: var(--priority-p4); }
+    /* V2d — no pill, order-only (nothing to render) */
+
+    /* ─── V3: Agenda bucket headers ──────────────────────────────────── */
+    .bucket {
+      /* no-op wrapper */
+    }
+    /* V3a — sticky + chevron + count */
+    .v3a .bucket-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px 6px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      position: sticky;
+      top: 0;
+      background: color-mix(in srgb, var(--bg) 92%, transparent);
+      backdrop-filter: blur(8px);
+      z-index: 2;
+      border-bottom: 1px solid var(--separator);
+    }
+    .v3a .chev {
+      display: inline-flex;
+      transition: transform 120ms ease-out;
+    }
+    .v3a .bucket--collapsed .chev { transform: rotate(-90deg); }
+    .v3a .bucket-count {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      margin-left: auto;
+    }
+    .v3a .bucket-head--overdue { color: var(--accent); }
+    /* V3b — sticky + count-only */
+    .v3b .bucket-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 2;
+    }
+    .v3b .bucket-count {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .v3b .bucket-head--overdue { color: var(--accent); }
+    .v3b .bucket-head--overdue .bucket-count { color: var(--accent); }
+    /* V3c — non-sticky expand */
+    .v3c .bucket-head {
+      padding: 12px 14px 4px;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      border-top: 1px solid var(--separator);
+    }
+    .v3c .bucket-count {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .v3c .bucket-head--overdue { color: var(--accent); }
+
+    /* ─── V4: Detail panel breadcrumb ─────────────────────────────────── */
+    .detail-panel {
+      background: var(--bg-surface);
+      padding: 12px 14px;
+      border-left: 2px solid var(--accent);
+    }
+    .crumb-chip {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-secondary);
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+      border: 1px solid var(--separator);
+      cursor: default;
+    }
+    .crumb-sep {
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      opacity: 0.6;
+      margin: 0 4px;
+    }
+    .crumb-row {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex-wrap: wrap;
+      margin-bottom: 2px;
+    }
+    .crumb-stamps {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      opacity: 0.8;
+    }
+    .detail-action {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+    }
+    .detail-trash {
+      margin-left: auto;
+      width: 20px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 3px;
+      border: 1px solid transparent;
+    }
+    .detail-trash:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+    .prop-row {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 10px;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+    .prop-row .label {
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    /* V4b — 2-line breadcrumb */
+    .v4b .crumb-row--goal {
+      margin-bottom: 2px;
+    }
+    .v4b .crumb-row--project {
+      margin-bottom: 6px;
+    }
+    .v4b .crumb-stamps {
+      margin-bottom: 12px;
+    }
+
+    /* V4c — collapsible context */
+    .v4c .context-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: none;
+      border: none;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 2px 0;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .v4c .context-toggle .chev { transition: transform 120ms ease-out; }
+    .v4c .context-open .chev { transform: rotate(90deg); }
+    .v4c .context-body {
+      display: none;
+      padding: 6px 0 10px;
+      border-bottom: 1px solid var(--separator);
+      margin-bottom: 10px;
+    }
+    .v4c .context-open + .context-body { display: block; }
+
+    /* ─── PICKS Bar at bottom ───────────────────────────────────────── */
+    .picks {
+      max-width: 1200px;
+      margin: 32px auto 0;
+      padding: 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--separator);
+      border-radius: 6px;
+    }
+    .picks-title {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 10px;
+    }
+    .picks-note {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+    .picks-list {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.7;
+    }
+    .picks-list code {
+      color: var(--accent);
+    }
+
+    @media (max-width: 720px) {
+      .variants { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-header">
+    <button class="theme-toggle" onclick="document.documentElement.setAttribute('data-theme', document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark')">Toggle theme</button>
+    <h1 class="page-title">vault-sidebar · Sprint 0 visual previews</h1>
+    <p class="page-sub">Pick one winner per decision. All 4 decisions use the same mock tasks (invoice · review · write · weekly · optional) so you can compare apples-to-apples. Tokens match <code style="font-family:var(--font-mono);font-size:11px">src/styles.css</code>. Test at 320 · 480 · 725 widths.</p>
+  </div>
+
+  <nav class="page-nav">
+    <a href="#v1">V1 · in-progress row</a>
+    <a href="#v2">V2 · priority pill</a>
+    <a href="#v3">V3 · bucket header</a>
+    <a href="#v4">V4 · breadcrumb</a>
+    <a href="#picks">→ record picks</a>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- V1 — In-progress row treatment (4 variants) -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section class="decision" id="v1">
+    <h2 class="decision-heading">V1 · In-progress row treatment</h2>
+    <p class="decision-prompt">When a task's status is <code>in-progress</code>, how should its row stand out? The middle row in each preview is the in-progress one.</p>
+    <div class="variants">
+
+      <article class="variant v1a">
+        <header class="variant-head"><span class="variant-id">V1a</span><span class="variant-label">Static stripe</span></header>
+        <div class="variant-body">
+          <div class="sample-list">
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Invoice to pay</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--p1">P1</span></div></div></div>
+            <div class="sample-row sample-row--ip"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Write review of plan</div><div class="sample-meta"><span class="sample-project">vault-sidebar</span><span class="sample-due">+1d</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+        </div>
+        <p class="variant-note">4px emerald left-edge. Calm, unambiguous, zero motion cost.</p>
+      </article>
+
+      <article class="variant v1b">
+        <header class="variant-head"><span class="variant-id">V1b</span><span class="variant-label">Stripe + breathing</span></header>
+        <div class="variant-body">
+          <div class="sample-list">
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Invoice to pay</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--p1">P1</span></div></div></div>
+            <div class="sample-row sample-row--ip"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Write review of plan</div><div class="sample-meta"><span class="sample-project">vault-sidebar</span><span class="sample-due">+1d</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+        </div>
+        <p class="variant-note">Stripe + 2s opacity breathe. More alive, louder with many in-progress tasks.</p>
+      </article>
+
+      <article class="variant v1c">
+        <header class="variant-head"><span class="variant-id">V1c</span><span class="variant-label">Dot after due chip</span></header>
+        <div class="variant-body">
+          <div class="sample-list">
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Invoice to pay</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--p1">P1</span></div></div></div>
+            <div class="sample-row sample-row--ip"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Write review of plan</div><div class="sample-meta"><span class="sample-project">vault-sidebar</span><span class="sample-due">+1d</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+        </div>
+        <p class="variant-note">6px emerald dot at end of meta. Minimum chrome; can be missed at narrow widths.</p>
+      </article>
+
+      <article class="variant v1d">
+        <header class="variant-head"><span class="variant-id">V1d</span><span class="variant-label">Circle → PlayCircle</span></header>
+        <div class="variant-body">
+          <div class="sample-list">
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Invoice to pay</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--p1">P1</span></div></div></div>
+            <div class="sample-row"><div class="circle circle--playcircle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Write review of plan</div><div class="sample-meta"><span class="sample-project">vault-sidebar</span><span class="sample-due">+1d</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+        </div>
+        <p class="variant-note">Glyph swap, no row chrome. Semantic (“play = running”); zero extra density.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- V2 — Priority pill style (4 variants) -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section class="decision" id="v2">
+    <h2 class="decision-heading">V2 · Priority pill style</h2>
+    <p class="decision-prompt">All 4 variants show the same task at 4 different rank levels (Critical · High · Medium · Low).</p>
+    <div class="variants">
+
+      <article class="variant">
+        <header class="variant-head"><span class="variant-id">V2a</span><span class="variant-label">C/H/M/L letters</span></header>
+        <div class="variant-body">
+          <div class="sample-list">
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Pay Q3 invoice to vendor</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--chml pill--c">C</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--chml pill--h">H</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Weekly review template</div><div class="sample-meta"><span class="sample-project">Life OS</span><span class="sample-due">+6d</span><span class="pill pill--chml pill--m">M</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Optional Cal.com tweak</div><div class="sample-meta"><span class="sample-project">Cal.com API</span><span class="sample-due">—</span><span class="pill pill--chml pill--l">L</span></div></div></div>
+          </div>
+        </div>
+        <p class="variant-note">Tightest. Critical = filled red. High = outline red. Medium = gray outline. Low = faint letter only.</p>
+      </article>
+
+      <article class="variant">
+        <header class="variant-head"><span class="variant-id">V2b</span><span class="variant-label">P1 / P2 / P3 / P4</span></header>
+        <div class="variant-body">
+          <div class="sample-list">
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Pay Q3 invoice to vendor</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--p1">P1</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Weekly review template</div><div class="sample-meta"><span class="sample-project">Life OS</span><span class="sample-due">+6d</span><span class="pill pill--p3">P3</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Optional Cal.com tweak</div><div class="sample-meta"><span class="sample-project">Cal.com API</span><span class="sample-due">—</span><span class="pill pill--p4">P4</span></div></div></div>
+          </div>
+        </div>
+        <p class="variant-note">Linear/Dashboard match. P1 red · P2 amber · P3 gray · P4 faint. Industry-standard.</p>
+      </article>
+
+      <article class="variant">
+        <header class="variant-head"><span class="variant-id">V2c</span><span class="variant-label">Lucide arrows</span></header>
+        <div class="variant-body">
+          <div class="sample-list">
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Pay Q3 invoice to vendor</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--icon pill--c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--icon pill--h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Weekly review template</div><div class="sample-meta"><span class="sample-project">Life OS</span><span class="sample-due">+6d</span><span class="pill pill--icon pill--m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Optional Cal.com tweak</div><div class="sample-meta"><span class="sample-project">Cal.com API</span><span class="sample-due">—</span><span class="pill pill--icon pill--l"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></span></div></div></div>
+          </div>
+        </div>
+        <p class="variant-note">Glyph-first. AlertCircle / Up / Right / Down. Visual, illustrative, less literal.</p>
+      </article>
+
+      <article class="variant">
+        <header class="variant-head"><span class="variant-id">V2d</span><span class="variant-label">No pill — order only</span></header>
+        <div class="variant-body">
+          <div class="sample-list">
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Pay Q3 invoice to vendor</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Weekly review template</div><div class="sample-meta"><span class="sample-project">Life OS</span><span class="sample-due">+6d</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Optional Cal.com tweak</div><div class="sample-meta"><span class="sample-project">Cal.com API</span><span class="sample-due">—</span></div></div></div>
+          </div>
+        </div>
+        <p class="variant-note">No chip. Row position = rank. Tightest rows; loses at-a-glance priority scanning.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- V3 — Agenda bucket headers (3 variants) -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section class="decision" id="v3">
+    <h2 class="decision-heading">V3 · Agenda bucket headers</h2>
+    <p class="decision-prompt">Each variant shows an Overdue bucket (open), a Today bucket (open), and a This Week bucket (collapsed where applicable). Scroll within the preview to test stickiness.</p>
+    <div class="variants">
+
+      <article class="variant v3a">
+        <header class="variant-head"><span class="variant-id">V3a</span><span class="variant-label">Sticky + chevron + count</span></header>
+        <div class="variant-body" style="max-height:320px;overflow-y:auto">
+          <div class="bucket">
+            <div class="bucket-head bucket-head--overdue"><span class="chev">▾</span> Overdue <span class="bucket-count">2</span></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Invoice to pay</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--p1">P1</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Last-week report</div><div class="sample-meta"><span class="sample-project">Life OS</span><span class="sample-due sample-due--overdue">−1d</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+          <div class="bucket">
+            <div class="bucket-head"><span class="chev">▾</span> Today <span class="bucket-count">2</span></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Ship plan feedback</div><div class="sample-meta"><span class="sample-project">vault-sidebar</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+          <div class="bucket bucket--collapsed">
+            <div class="bucket-head"><span class="chev">▾</span> This Week <span class="bucket-count">7</span></div>
+          </div>
+          <div class="bucket bucket--collapsed">
+            <div class="bucket-head"><span class="chev">▾</span> Upcoming <span class="bucket-count">12</span></div>
+          </div>
+        </div>
+        <p class="variant-note">Sticky header + chevron + count. Overdue in accent. Collapsed = chevron rotates. Most informative.</p>
+      </article>
+
+      <article class="variant v3b">
+        <header class="variant-head"><span class="variant-id">V3b</span><span class="variant-label">Sticky + count only</span></header>
+        <div class="variant-body" style="max-height:320px;overflow-y:auto">
+          <div class="bucket">
+            <div class="bucket-head bucket-head--overdue">OVERDUE <span class="bucket-count">2</span></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Invoice to pay</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--p1">P1</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Last-week report</div><div class="sample-meta"><span class="sample-project">Life OS</span><span class="sample-due sample-due--overdue">−1d</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+          <div class="bucket">
+            <div class="bucket-head">TODAY <span class="bucket-count">2</span></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Ship plan feedback</div><div class="sample-meta"><span class="sample-project">vault-sidebar</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+          <div class="bucket">
+            <div class="bucket-head">THIS WEEK <span class="bucket-count">7</span></div>
+          </div>
+          <div class="bucket">
+            <div class="bucket-head">UPCOMING <span class="bucket-count">12</span></div>
+          </div>
+        </div>
+        <p class="variant-note">Tightest. All-caps label + count only. No chevron. Collapse via different interaction (click row? keyboard?).</p>
+      </article>
+
+      <article class="variant v3c">
+        <header class="variant-head"><span class="variant-id">V3c</span><span class="variant-label">Non-sticky expand</span></header>
+        <div class="variant-body" style="max-height:320px;overflow-y:auto">
+          <div class="bucket">
+            <div class="bucket-head bucket-head--overdue">Overdue <span class="bucket-count">· 2</span></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Invoice to pay</div><div class="sample-meta"><span class="sample-project">Accountability Coach</span><span class="sample-due sample-due--overdue">−3d</span><span class="pill pill--p1">P1</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Last-week report</div><div class="sample-meta"><span class="sample-project">Life OS</span><span class="sample-due sample-due--overdue">−1d</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+          <div class="bucket">
+            <div class="bucket-head">Today <span class="bucket-count">· 2</span></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Review Q4 offer chain</div><div class="sample-meta"><span class="sample-project">GTM Sprint</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+            <div class="sample-row"><div class="circle"></div><div class="sample-content"><div class="sample-title">Ship plan feedback</div><div class="sample-meta"><span class="sample-project">vault-sidebar</span><span class="sample-due sample-due--today">today</span><span class="pill pill--p2">P2</span></div></div></div>
+          </div>
+          <div class="bucket">
+            <div class="bucket-head">This Week <span class="bucket-count">· 7</span></div>
+          </div>
+          <div class="bucket">
+            <div class="bucket-head">Upcoming <span class="bucket-count">· 12</span></div>
+          </div>
+        </div>
+        <p class="variant-note">Headers scroll away. Less chrome; can lose position context in long lists.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- V4 — Detail panel breadcrumb (3 variants) -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section class="decision" id="v4">
+    <h2 class="decision-heading">V4 · Detail panel breadcrumb</h2>
+    <p class="decision-prompt">How the hierarchy + timestamps appear above the Action row.</p>
+    <div class="variants">
+
+      <article class="variant">
+        <header class="variant-head"><span class="variant-id">V4a</span><span class="variant-label">1-line crumb + 1-line stamps</span></header>
+        <div class="variant-body">
+          <div class="detail-panel">
+            <div class="crumb-row">
+              <span class="crumb-chip">Build The Machine</span>
+              <span class="crumb-sep">›</span>
+              <span class="crumb-chip">GTM Sprint</span>
+              <span class="detail-trash" title="Delete task">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </span>
+            </div>
+            <div class="crumb-stamps">created 3d ago · modified 2h ago</div>
+            <div class="detail-action">Review Q4 offer chain</div>
+            <div class="prop-row"><span class="label">Status</span><span>in-progress</span></div>
+            <div class="prop-row"><span class="label">Due</span><span>today</span></div>
+            <div class="prop-row"><span class="label">Priority</span><span>P2</span></div>
+          </div>
+        </div>
+        <p class="variant-note">Recommended default. Two-line context zone above Action. Trash right-aligned in crumb.</p>
+      </article>
+
+      <article class="variant v4b">
+        <header class="variant-head"><span class="variant-id">V4b</span><span class="variant-label">2-line stacked crumb</span></header>
+        <div class="variant-body">
+          <div class="detail-panel">
+            <div class="crumb-row crumb-row--goal"><span class="crumb-chip">Build The Machine</span></div>
+            <div class="crumb-row crumb-row--project">
+              <span class="crumb-chip">GTM Sprint</span>
+              <span class="detail-trash" title="Delete task">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </span>
+            </div>
+            <div class="crumb-stamps">created 3d ago · modified 2h ago</div>
+            <div class="detail-action">Review Q4 offer chain</div>
+            <div class="prop-row"><span class="label">Status</span><span>in-progress</span></div>
+            <div class="prop-row"><span class="label">Due</span><span>today</span></div>
+            <div class="prop-row"><span class="label">Priority</span><span>P2</span></div>
+          </div>
+        </div>
+        <p class="variant-note">Goal on its own line above project. More breathing room; uses more vertical.</p>
+      </article>
+
+      <article class="variant v4c">
+        <header class="variant-head"><span class="variant-id">V4c</span><span class="variant-label">Collapsible context</span></header>
+        <div class="variant-body">
+          <div class="detail-panel">
+            <button class="context-toggle" onclick="this.classList.toggle('context-open')"><span class="chev">▸</span> context</button>
+            <div class="context-body">
+              <div class="crumb-row">
+                <span class="crumb-chip">Build The Machine</span>
+                <span class="crumb-sep">›</span>
+                <span class="crumb-chip">GTM Sprint</span>
+              </div>
+              <div class="crumb-stamps">created 3d ago · modified 2h ago</div>
+            </div>
+            <div class="detail-action" style="display:flex;align-items:center;gap:10px">
+              <span style="flex:1">Review Q4 offer chain</span>
+              <span class="detail-trash" title="Delete task">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </span>
+            </div>
+            <div class="prop-row"><span class="label">Status</span><span>in-progress</span></div>
+            <div class="prop-row"><span class="label">Due</span><span>today</span></div>
+            <div class="prop-row"><span class="label">Priority</span><span>P2</span></div>
+          </div>
+        </div>
+        <p class="variant-note">Context hidden by default. Click “context” to expand. Fewest visible elements; needs a click to see lineage.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- PICKS -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <section class="picks" id="picks">
+    <h3 class="picks-title">Record your picks</h3>
+    <p class="picks-note">Edit <code style="font-family:var(--font-mono)">docs/visual-previews/PICKS.md</code> with your choice per decision. Defaults apply if blank.</p>
+    <div class="picks-list">
+      V1 (in-progress row) → <code>V1a</code> · V1b · V1c · V1d<br/>
+      V2 (priority pill) → V2a · <code>V2b</code> · V2c · V2d<br/>
+      V3 (bucket headers) → <code>V3a</code> · V3b · V3c<br/>
+      V4 (breadcrumb) → <code>V4a</code> · V4b · V4c<br/>
+    </div>
+  </section>
+
+  <script>
+    // Minimal theme-persist between reloads (matches src/lib/theme.ts pattern, local-only).
+    const saved = localStorage.getItem("preview-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+    document.querySelector(".theme-toggle").addEventListener("click", () => {
+      const t = document.documentElement.getAttribute("data-theme");
+      try { localStorage.setItem("preview-theme", t); } catch(_){}
+    });
+  </script>
+</body>
+</html>
