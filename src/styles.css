@@ -1636,6 +1636,32 @@ button.prop-row:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Deleting overlay (during post-delete vault refetch) ─────────────── */
+
+.task-detail-panel--deleting {
+  position: relative;
+}
+.task-detail-panel--deleting > *:not(.task-detail-panel__deleting-overlay) {
+  opacity: 0.3;
+  pointer-events: none;
+  filter: saturate(0.5);
+  transition: opacity 120ms ease-out;
+}
+.task-detail-panel__deleting-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+  backdrop-filter: blur(2px);
+  z-index: 2;
+  letter-spacing: 0.3px;
+  font-family: var(--font-mono);
+}
+
 /* ── Multi-line prop-text for Notes display ─────────────────────────── */
 
 .prop-text--multiline {

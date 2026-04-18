@@ -616,6 +616,10 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
   const panelRef = useRef<HTMLDivElement>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // R2 DELETE-STALE-FLICKER (Gemini) — while fetchVault runs post-delete,
+  // hide the panel contents behind a "Deleting…" overlay so the user
+  // doesn't see the about-to-be-gone task as still-interactive for 1-2s.
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handlePromoted = useCallback(() => {
     setExpandedTaskId(null);
@@ -653,24 +657,32 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
 
     // R1 DELETE-UNMOUNT-TIMING — refetch BEFORE collapsing the panel so
     // the ConfirmModal's focus-restore useEffect runs while the trash
-    // button (returnFocusRef target) is still in the DOM. The store
-    // update collapses the panel naturally when the refreshed task id
-    // no longer matches expandedTaskId.
-    //
-    // R1 INLINE-DELETE-LINE-SHIFT — for inline deletes we also clear
-    // expandedTaskId explicitly at the end, because the refetched vault
-    // might surface a DIFFERENT task at the same line number, which
-    // would mis-match the pinned id and cause a surprising stay-open.
-    async function collapseAfterRefetch() {
+    // button (returnFocusRef target) is still in the DOM.
+    // R2 DELETE-STALE-FLICKER — set isDeleting true during the refetch
+    // window so the panel body renders a quiet "Deleting…" placeholder
+    // rather than the stale task details.
+    // R2 DELETE-ERROR-INVISIBLE — on fetchVault failure, keep the panel
+    // MOUNTED so the inline error is visible; only collapse on success.
+
+    async function collapseAfterRefetch(): Promise<void> {
+      setIsDeleting(true);
+      let refetchFailed = false;
       try {
         const v = await fetchVault();
         useSidebarStore.getState().setVault(v);
       } catch {
-        // R1 FETCH-FAILURE-SILENT — surface a soft warning; delete
-        // succeeded but the UI may be stale until SSE catches up.
-        setDeleteError("Deleted. Vault refresh failed — will sync shortly.");
+        refetchFailed = true;
       }
-      setExpandedTaskId(null);
+      if (refetchFailed) {
+        // Stay mounted with a visible error — user can dismiss themselves.
+        setDeleteError(
+          "Deleted. Vault refresh failed — SSE will sync. Close panel manually."
+        );
+        setIsDeleting(false);
+      } else {
+        // Success path: collapse the panel; React unmounts cleanly.
+        setExpandedTaskId(null);
+      }
     }
 
     if (isEntityTask && task.entityPath) {
@@ -698,7 +710,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
 
   const panelClass = `task-detail-panel${isInline ? " task-detail-panel--inline" : ""}${
     saveState === "error" ? " task-detail-panel--error" : ""
-  }`;
+  }${isDeleting ? " task-detail-panel--deleting" : ""}`;
 
   // ── Breadcrumb pieces ─────────────────────────────────────────────────────
   // V4B layout (picked in Sprint 0): goal line alone, project+trash line,
@@ -908,8 +920,16 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
       )}
 
       {deleteError && (
-        <div className="prop-error-row" role="alert">
-          Delete failed: {deleteError}
+        <div className="prop-error-row" role="alert" aria-live="assertive">
+          {deleteError.startsWith("Deleted")
+            ? deleteError
+            : `Delete failed: ${deleteError}`}
+        </div>
+      )}
+
+      {isDeleting && !deleteError && (
+        <div className="task-detail-panel__deleting-overlay" role="status" aria-live="polite">
+          Deleting…
         </div>
       )}
 

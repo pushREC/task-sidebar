@@ -49,6 +49,15 @@ export async function deleteEntityTask(
   const resolved = resolveTasksPath(input.entityPath);
   assertSafeTasksPath(resolved);
 
+  // R2 CRITICAL (Codex) — assertSafeTasksPath intentionally admits three
+  // shapes (README.md, tasks.md, entity task file). delete-entity must
+  // narrow to the entity-task shape specifically; otherwise a caller
+  // could POST `{entityPath: "1-Projects/foo/README.md"}` and delete the
+  // project README. Mirror the same shape-check task-body-edit uses.
+  if (!/\/1-Projects\/[^/]+\/tasks\/[^/]+\.md$/.test(resolved)) {
+    throw safetyError("delete-entity is only valid for entity task files", 403);
+  }
+
   // Idempotent: if the file is already gone, treat it as success. This
   // is friendlier than 404 when SSE or another agent beat us to it.
   if (!existsSync(resolved)) {
@@ -108,6 +117,12 @@ export async function deleteInlineTask(
 
   const resolved = resolveTasksPath(input.tasksPath);
   assertSafeTasksPath(resolved);
+
+  // R2 CRITICAL (Codex) — narrow to the tasks.md shape so delete-inline
+  // can't be steered at an entity task file or a README.
+  if (!/\/1-Projects\/[^/]+\/tasks\.md$/.test(resolved)) {
+    throw safetyError("delete-inline is only valid for project tasks.md", 403);
+  }
 
   if (!existsSync(resolved)) {
     throw safetyError(`tasks.md not found: ${toRelative(resolved)}`, 404);
