@@ -8,6 +8,10 @@
      Light accent (#a63228) passes on #faf9f5 (6.41:1). */
   --accent: #d84a3e;
   --accent-dim: #a63228; /* kept for subtle states */
+  /* A3 — foreground on accent-filled surfaces (always white in both themes
+     because accent-red text on white vs white text on red both pass WCAG AA).
+     Replaces hardcoded #fff in confirm-modal + quickadd. */
+  --accent-foreground: #ffffff;
 
   /* Sprint B — role color for in-progress / agent / success (Lock #1 reopened
      to admit a 3-color role palette: red accent, emerald OK, muted default). */
@@ -124,6 +128,9 @@ body {
   min-width: 280px;
   min-height: 100dvh;
   overflow-x: hidden;
+  /* P11 — background + color cross-fade 80ms on theme change (reduced-motion
+     suppresses via the @media block at file end). */
+  transition: background-color 80ms ease-out, color 80ms ease-out;
 }
 
 .sidebar {
@@ -192,7 +199,14 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
 }
 .task-row--indent + .task-row--indent::before { left: 32px; }
 .task-row:hover { background: var(--bg-hover); }
-.task-row--selected { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 4px; }
+/* A6/P10 — unify selected + expanded indicators. Both use a left-edge
+   accent stripe so the Agenda/Projects row anatomy reads consistently
+   with the in-progress emerald stripe (Sprint B V1A). Dropping inset
+   box-shadow removes the border-radius clipping artifact that appeared
+   with the breadcrumb trash row. */
+.task-row--selected {
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
 
 /* H8 / M21 — task-circle is now a <button>; button defaults reset,
    padding expands hit region to ≥24×24 px without growing the 16×16 glyph */
@@ -213,6 +227,20 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
 }
 .task-circle.done { color: var(--text-secondary); }
 .task-row:hover .task-circle { color: var(--accent); }
+.task-circle:active { transform: scale(0.92); }
+/* P01 — spring-bounce on completion. Applied by TaskRow as `.task-circle-bounce`
+   class once on the done-transition and removed on animationend. Mirrors the
+   pushrec-dashboard task-complete keyframes (ui-ux §4 timing). Guarded by
+   prefers-reduced-motion at file end. */
+.task-circle-bounce {
+  animation: task-complete 360ms cubic-bezier(0.25, 0.9, 0.35, 1.25);
+}
+@keyframes task-complete {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.25); }
+  70%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
 /* A9 — explicit focus ring; global :focus-visible does clip inside the padding
    hack, so override with a visible 2px accent outline that sits outside the
    circle's 8px margin compensation. */
@@ -905,7 +933,7 @@ h3.group-header, .group-header {
 }
 .entity-form-btn--submit {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-foreground);
   border-color: var(--accent);
   font-weight: 500;
 }
@@ -1768,7 +1796,7 @@ button.prop-row:focus-visible {
 
 .confirm-modal__btn--confirm {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-foreground);
   border: 1px solid var(--accent);
   font-weight: 500;
 }
@@ -1783,6 +1811,221 @@ button.prop-row:focus-visible {
 .confirm-modal__btn--confirm[disabled] {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ─── Sprint F — Feel + edges + audit residue ─────────────────────────── */
+
+/* A8 — active-press feedback (scale 0.97) on interactive controls.
+   Single shared helper class so every button gets the affordance without
+   duplicating the rule in 9 places. */
+.press-scale:active:not([disabled]) {
+  transform: scale(0.97);
+}
+
+/* P04 — sync pill (upgrade from the 6px sync-dot). Mini pill with
+   "saving"/"synced" label that fades between states. Lives in the header
+   top-right; uses mono + tnum for tight width budget. */
+.sync-pill {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum";
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--separator);
+  margin-left: 8px;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+  transition: color 200ms ease-out, background 200ms ease-out, border-color 200ms ease-out, opacity 250ms ease-out;
+}
+.sync-pill--saving {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.sync-pill--synced {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 8%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.sync-pill--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* A4 — extracted from App.tsx inline style */
+.empty-state--error {
+  color: var(--accent);
+}
+
+/* E01 — OfflineCard: displayed in place of the task list when /api/vault fails. */
+.offline-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.offline-card__icon {
+  color: var(--accent);
+  opacity: 0.8;
+}
+.offline-card__title {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.offline-card__hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  max-width: 260px;
+  line-height: 1.45;
+}
+.offline-card__retry {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 14px;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 120ms ease-out, border-color 120ms ease-out;
+}
+.offline-card__retry:hover:not([disabled]) {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+}
+.offline-card__retry[disabled] {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* E02 — SSE reconnect banner: slim bar at top of the sidebar. */
+.sse-banner {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  letter-spacing: 0.3px;
+}
+.sse-banner__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.7;
+  animation: sse-pulse 1.6s ease-in-out infinite;
+}
+@keyframes sse-pulse {
+  0%,100% { opacity: 0.35; }
+  50%     { opacity: 0.85; }
+}
+
+/* E06 — First-launch onboarding card (shown once, localStorage-gated). */
+.onboarding-card {
+  margin: 16px;
+  padding: 14px 14px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--separator-strong);
+  border-radius: 6px;
+  position: relative;
+}
+.onboarding-card__title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+.onboarding-card__list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.onboarding-card__list li {
+  padding-left: 14px;
+  position: relative;
+}
+.onboarding-card__list li::before {
+  content: "—";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+}
+.onboarding-card__dismiss {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--separator-strong);
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: color 120ms ease-out, border-color 120ms ease-out;
+}
+.onboarding-card__dismiss:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* E09 — Projects view "Show inactive" toggle */
+.projects-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 16px 8px;
+  border-bottom: 1px solid var(--separator);
+}
+.projects-toolbar__toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--separator);
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  font-family: var(--font-mono);
+  transition: color 120ms ease-out, border-color 120ms ease-out, background 120ms ease-out;
+}
+.projects-toolbar__toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--separator-strong);
+}
+.projects-toolbar__toggle--active {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--separator-strong);
+}
+
+/* P02 — empty-state bounce: once on mount, not infinite.
+   Existing .empty-state-icon animation on EmptyState needs `forwards` +
+   `iteration-count: 1`. Add defensive rule if any existing keyframes are
+   using `infinite`. */
+.empty-state-icon {
+  animation-iteration-count: 1 !important;
+  animation-fill-mode: forwards !important;
 }
 
 /* Reduced motion (must be last) */

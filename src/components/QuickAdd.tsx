@@ -280,7 +280,7 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
           />
           <button
             type="button"
-            className={`quick-add-entity-btn${entityMode ? " active" : ""}`}
+            className={`quick-add-entity-btn press-scale${entityMode ? " active" : ""}`}
             onClick={() => setEntityMode((v) => !v)}
             aria-label={entityMode ? "Switch to inline task mode" : "Switch to entity task mode"}
             aria-pressed={entityMode}

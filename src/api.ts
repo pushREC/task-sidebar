@@ -215,18 +215,37 @@ export async function fetchVault(): Promise<VaultResponse> {
 /**
  * Subscribe to vault file-change events via SSE.
  * Returns a cleanup function that closes the EventSource.
- * EventSource handles reconnect automatically; we log after 3 consecutive errors.
+ * EventSource handles reconnect automatically.
+ *
+ * Sprint F E02 — optional `onConnectionChange` callback fires with a
+ * string tag whenever the connection state transitions. Callers use this
+ * to surface a "reconnecting…" banner after >10s of disconnection.
  */
-export function subscribeVaultEvents(onChange: () => void): () => void {
+export type SSEConnectionState = "open" | "closed" | "connecting";
+
+export function subscribeVaultEvents(
+  onChange: () => void,
+  onConnectionChange?: (state: SSEConnectionState) => void
+): () => void {
   const source = new EventSource("/api/events");
 
   source.addEventListener("vault-changed", () => {
     onChange();
   });
 
-  // A1 — no dev-log on SSE reconnect; Sprint F E02 will surface an offline
-  // banner by subscribing to readyState changes here. For now, the browser's
-  // built-in EventSource reconnect handles transient failures silently.
+  source.addEventListener("open", () => {
+    onConnectionChange?.("open");
+  });
+
+  // EventSource fires "error" on initial failure AND on every reconnect
+  // attempt (then auto-retries with increasing backoff). We don't bail;
+  // the browser's own reconnect logic handles the retries.
+  source.addEventListener("error", () => {
+    // readyState === CONNECTING (0) → reconnect in flight
+    // readyState === CLOSED (2)     → terminal failure
+    const rs = source.readyState;
+    onConnectionChange?.(rs === EventSource.CLOSED ? "closed" : "connecting");
+  });
 
   return () => {
     source.close();

@@ -81,6 +81,25 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
 
   // ── Toggle ────────────────────────────────────────────────────────────────
 
+  // Sprint F P01 — spring-bounce on completion. Toggle adds `.task-circle-bounce`
+  // to trigger the keyframes; we clean it up on animationend so repeated
+  // toggles animate each time. Plays on open→done AND done→open for
+  // consistent feedback; reduced-motion suppresses via the global CSS rule.
+  const circleBounceRef = useRef<HTMLButtonElement | null>(null);
+
+  function playBounce() {
+    const btn = circleBounceRef.current;
+    if (!btn) return;
+    btn.classList.remove("task-circle-bounce");
+    // Force reflow so adding the class again retriggers the animation.
+    void btn.offsetWidth;
+    btn.classList.add("task-circle-bounce");
+  }
+
+  function handleCircleAnimationEnd() {
+    circleBounceRef.current?.classList.remove("task-circle-bounce");
+  }
+
   function handleToggleClick(e: React.MouseEvent) {
     e.stopPropagation();
     if (!tasksPath) return;
@@ -91,6 +110,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     const taskLine = task.line;
 
     const newDone = !task.done;
+    playBounce();
     optimisticToggle(task.id);
 
     toggleTaskApi({ tasksPath, line: taskLine, done: newDone }).then((result) => {
@@ -352,9 +372,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
       >
         {/* H8 — task-circle is a <button> in editing mode too */}
         <button
+          ref={circleBounceRef}
           type="button"
           className={`task-circle${task.done ? " done" : ""}`}
           onClick={handleToggleClick}
+          onAnimationEnd={handleCircleAnimationEnd}
           aria-pressed={task.done}
           aria-label={task.done ? "Mark open" : "Mark done"}
         >
@@ -424,9 +446,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
             button-in-button ARIA nesting. Keyboard expand goes through
             useKeyboardNav → Enter → dispatch click on the row. */}
         <button
+          ref={circleBounceRef}
           type="button"
           className={`task-circle${task.done ? " done" : ""}`}
           onClick={handleToggleClick}
+          onAnimationEnd={handleCircleAnimationEnd}
           aria-pressed={task.done}
           aria-label={task.done ? "Mark open" : "Mark done"}
           title={task.done ? "Mark open · x" : "Mark done · x"}

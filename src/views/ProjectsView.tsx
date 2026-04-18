@@ -23,11 +23,27 @@ function dueDaysLabel(due: string | undefined): string | null {
   return `due in ${diff}d`;
 }
 
+// Sprint F E09 — localStorage key for "Show inactive" toggle. Kept outside
+// the Zustand store (it's a purely local preference, not worth hydration
+// complexity + persist migration). Safe against storage absence.
+const SHOW_INACTIVE_KEY = "vault-sidebar-show-inactive";
+
 export function ProjectsView({ projects }: ProjectsViewProps) {
   const expandedProjects = useSidebarStore((s) => s.expandedProjects);
   const toggleProjectExpanded = useSidebarStore((s) => s.toggleProjectExpanded);
   const expandedProjectSlug = useSidebarStore((s) => s.expandedProjectSlug);
   const setExpandedProjectSlug = useSidebarStore((s) => s.setExpandedProjectSlug);
+
+  const [showInactive, setShowInactiveState] = useState<boolean>(() => {
+    try { return localStorage.getItem(SHOW_INACTIVE_KEY) === "1"; } catch { return false; }
+  });
+  function toggleShowInactive() {
+    setShowInactiveState((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(SHOW_INACTIVE_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }
 
   // C4-N + Gemini M-4 — shared `now` that only recomputes on a LOCAL
   // calendar day rollover. Prevents mid-day re-renders from shifting
@@ -43,22 +59,50 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const now = useMemo(() => new Date(), [projects, epochDay]);
 
-  const activeProjects = projects
-    .filter((p) => p.status === "active")
+  // E09 — if showInactive, include backlog / blocked / paused projects too
+  // (never done/cancelled — those belong in 4-Archive by definition).
+  const INACTIVE_STATUSES = new Set(["backlog", "blocked", "paused"]);
+  const scopedProjects = projects
+    .filter((p) => p.status === "active" || (showInactive && INACTIVE_STATUSES.has(p.status)))
     .sort((a, b) => {
+      // Active first, then whatever the inactive order happens to be (by due).
+      if (a.status !== b.status) {
+        if (a.status === "active") return -1;
+        if (b.status === "active") return 1;
+      }
       if (a.due && b.due) return a.due.localeCompare(b.due);
       if (a.due) return -1;
       if (b.due) return 1;
       return a.title.localeCompare(b.title);
     });
 
-  if (activeProjects.length === 0) {
-    return <EmptyState icon={FolderOpen} title="No active projects." />;
+  const toolbar = (
+    <div className="projects-toolbar">
+      <button
+        type="button"
+        className={`projects-toolbar__toggle press-scale${showInactive ? " projects-toolbar__toggle--active" : ""}`}
+        onClick={toggleShowInactive}
+        aria-pressed={showInactive}
+        title="Show backlog · blocked · paused projects"
+      >
+        {showInactive ? "Hide inactive" : "Show inactive"}
+      </button>
+    </div>
+  );
+
+  if (scopedProjects.length === 0) {
+    return (
+      <>
+        {toolbar}
+        <EmptyState icon={FolderOpen} title={showInactive ? "No projects." : "No active projects."} />
+      </>
+    );
   }
 
   return (
     <div className="task-list" data-view="projects">
-      {activeProjects.map((project) => {
+      {toolbar}
+      {scopedProjects.map((project) => {
         const isExpanded = expandedProjects.has(project.slug);
         const isDetailExpanded = expandedProjectSlug === project.slug;
         const openTasks = project.tasks.filter((t) => !t.done);

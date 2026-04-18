@@ -169,14 +169,14 @@ export function ConfirmModal({
           <button
             ref={cancelRef}
             type="button"
-            className="confirm-modal__btn confirm-modal__btn--cancel"
+            className="confirm-modal__btn confirm-modal__btn--cancel press-scale"
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
             type="button"
-            className={`confirm-modal__btn confirm-modal__btn--confirm confirm-modal__btn--${variant}`}
+            className={`confirm-modal__btn confirm-modal__btn--confirm confirm-modal__btn--${variant} press-scale`}
             disabled={!armed}
             onClick={onConfirm}
             // R1 ARMING-VISUAL-CUE — "Arming…" in label while disabled so

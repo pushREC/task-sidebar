@@ -102,7 +102,7 @@ export function EntityCreateForm({
           <span className="entity-form-title">New entity task</span>
           <button
             type="button"
-            className="entity-form-close"
+            className="entity-form-close press-scale"
             aria-label="Close"
             onClick={onClose}
           >
@@ -229,7 +229,7 @@ export function EntityCreateForm({
           <div className="entity-form-footer">
             <button
               type="button"
-              className="entity-form-btn entity-form-btn--cancel"
+              className="entity-form-btn entity-form-btn--cancel press-scale"
               onClick={onClose}
               disabled={submitting}
             >
@@ -237,7 +237,7 @@ export function EntityCreateForm({
             </button>
             <button
               type="submit"
-              className="entity-form-btn entity-form-btn--submit"
+              className="entity-form-btn entity-form-btn--submit press-scale"
               disabled={submitting || !action.trim()}
             >
               {submitting ? "Creating…" : "Create task"}
