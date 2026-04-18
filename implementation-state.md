@@ -26,8 +26,8 @@
   - Animation: `error-tooltip-in` 120ms ease-out 80ms delay
 
 ### H.2 mtime optimistic lock
-- H.2.1 Create server/writers/mtime-lock.ts — NOT STARTED
-- H.2.2 Wire into task-body-edit.ts — NOT STARTED
+- H.2.1 Create server/writers/mtime-lock.ts — COMPLETE (includes safetyError.extra extension in server/safety.ts + routes.ts handleError merge)
+- H.2.2 Wire into task-body-edit.ts — IN PROGRESS
 - H.2.3 Wire into task-field-edit.ts — NOT STARTED
 - H.2.4 api.ts expectedModified param — NOT STARTED
 - H.2.5 TaskDetailPanel capture on edit-open — NOT STARTED

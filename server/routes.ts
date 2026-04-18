@@ -29,7 +29,11 @@ function isSafetyError(err: unknown): err is SafetyError {
 
 function handleError(err: unknown, res: Response): void {
   if (isSafetyError(err)) {
-    res.status(err.statusCode).json({ ok: false, error: err.message });
+    // Sprint H.2.1 — merge `extra` (e.g. currentModified on 409 mtime-mismatch)
+    // into the JSON body alongside the existing {ok, error} envelope.
+    const body: Record<string, unknown> = { ok: false, error: err.message };
+    if (err.extra) Object.assign(body, err.extra);
+    res.status(err.statusCode).json(body);
   } else {
     process.stderr.write(`[routes] unexpected error: ${err}\n`);
     res.status(500).json({ ok: false, error: "Internal server error" });

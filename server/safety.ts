@@ -160,10 +160,20 @@ export function resolveTasksPath(input: string): string {
 
 export interface SafetyError extends Error {
   statusCode: number;
+  // Sprint H.2.1 — optional extra fields merged into the JSON response
+  // body by routes.ts handleError. Used by mtime-lock to carry the
+  // current disk mtime on a 409 mismatch (`{ok:false, error:"...",
+  // currentModified: "..."}`).
+  extra?: Record<string, unknown>;
 }
 
-export function safetyError(message: string, statusCode: number): SafetyError {
+export function safetyError(
+  message: string,
+  statusCode: number,
+  extra?: Record<string, unknown>
+): SafetyError {
   const err = new Error(message) as SafetyError;
   err.statusCode = statusCode;
+  if (extra) err.extra = extra;
   return err;
 }
