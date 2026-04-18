@@ -9,6 +9,7 @@ import { SkeletonList } from "./components/SkeletonRow.js";
 import { useKeyboardNav } from "./lib/keyboard.js";
 import { useTheme } from "./lib/theme.js";
 import type { ThemeChoice } from "./lib/theme.js";
+import { AGENDA_PROJECT_STATUSES } from "./lib/project-scopes.js";
 
 // Sprint B D16 — tabs become Agenda + Projects only.
 type Tab = "agenda" | "projects";
@@ -149,17 +150,13 @@ export function App() {
 
   const activeProjectCount =
     vault?.projects.filter((p) => p.status === "active").length ?? 0;
-  // Agenda total = open tasks across active/backlog/blocked/paused projects
+  // C-8 — single source of truth for the Agenda scope. Previously this
+  // used a narrower ["active","backlog","blocked","paused"] list which
+  // disagreed with AgendaView's legacy-enum support, so the badge count
+  // undercounted tasks on projects with status="on-track"/"at-risk"/etc.
   const agendaCount =
     vault?.projects.reduce((sum, p) => {
-      if (
-        p.status !== "active" &&
-        p.status !== "backlog" &&
-        p.status !== "blocked" &&
-        p.status !== "paused"
-      ) {
-        return sum;
-      }
+      if (!AGENDA_PROJECT_STATUSES.has(p.status)) return sum;
       return sum + p.tasks.filter((t) => !t.done && t.status !== "cancelled").length;
     }, 0) ?? 0;
   const firstActiveSlug =

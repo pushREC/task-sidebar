@@ -944,6 +944,11 @@ h3.group-header, .group-header {
 .bucket-body {
   /* no chrome — rows handle their own separators */
 }
+/* M-2 — bucket-body stays in the DOM when collapsed so aria-controls
+   always resolves; the `hidden` attribute handles visibility. */
+.bucket-body[hidden] {
+  display: none;
+}
 .bucket-empty {
   padding: 8px 16px;
   font-size: 11px;
@@ -971,13 +976,15 @@ h3.group-header, .group-header {
   margin-left: 2px;
 }
 
-/* Sprint B — done tasks stay inline (D17) with strikethrough + extra fade */
+/* Sprint B — done tasks stay inline (D17) with strikethrough + muted color.
+   M-3 — opacity kept at 0.7 (≈ 4.5:1 contrast against bg-surface in both
+   themes). 0.55 failed WCAG AA on light theme per convergence round 1. */
 .task-row--done .task-title {
   text-decoration: line-through;
   color: var(--text-secondary);
 }
 .task-row--done {
-  opacity: 0.55;
+  opacity: 0.7;
 }
 
 /* Sprint B — relative due formatting variants */

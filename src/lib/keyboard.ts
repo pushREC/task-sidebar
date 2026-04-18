@@ -20,22 +20,25 @@ function getVisibleTaskIds(): string[] {
 
 /**
  * Find the bucket a given row belongs to by walking up from `[data-task-row]`
- * to the closest `[data-bucket]` ancestor. Returns `null` when the row lives
- * outside a bucket (e.g. Projects view).
+ * to the closest `section[data-bucket]` ancestor. Returns `null` when the row
+ * lives outside a bucket (e.g. Projects view).
+ *
+ * C-1 — selector scoped to `section[data-bucket]` because BucketHeader no
+ * longer emits data-bucket (removed in convergence round 1).
  */
 function bucketOfRow(taskId: string): string | null {
   const row = document.querySelector<HTMLElement>(
     `[data-task-id="${taskId}"]`
   );
   if (!row) return null;
-  const sec = row.closest<HTMLElement>("[data-bucket]");
+  const sec = row.closest<HTMLElement>("section[data-bucket]");
   return sec?.dataset.bucket ?? null;
 }
 
 /** Task ids belonging to a specific bucket, in DOM order. */
 function getTaskIdsInBucket(bucket: string): string[] {
   const sec = document.querySelector<HTMLElement>(
-    `[data-bucket="${bucket}"]`
+    `section[data-bucket="${bucket}"]`
   );
   if (!sec) return [];
   const rows = sec.querySelectorAll<HTMLElement>("[data-task-row]");
@@ -44,7 +47,7 @@ function getTaskIdsInBucket(bucket: string): string[] {
 
 /** All bucket names currently rendered, in DOM order. */
 function getVisibleBuckets(): string[] {
-  const secs = document.querySelectorAll<HTMLElement>("[data-bucket]");
+  const secs = document.querySelectorAll<HTMLElement>("section[data-bucket]");
   return Array.from(secs).map((el) => el.dataset.bucket ?? "");
 }
 
@@ -80,6 +83,8 @@ export function useKeyboardNav(
 ) {
   const gPendingRef = useRef(false);
   const gTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // C-3 — pending nav-timer refs so rapid key sequences cancel stale work
+  const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const store = useSidebarStore;
 
@@ -100,12 +105,12 @@ export function useKeyboardNav(
       // Tab jump — 1 Agenda / 2 Projects
       if (e.key === "1") {
         e.preventDefault();
-        jumpToTab("agenda");
+        jumpToTab("agenda", navTimerRef);
         return;
       }
       if (e.key === "2") {
         e.preventDefault();
-        jumpToTab("projects");
+        jumpToTab("projects", navTimerRef);
         return;
       }
 
@@ -129,32 +134,44 @@ export function useKeyboardNav(
         }
         if (e.key === "a") {
           e.preventDefault();
-          jumpToTab("agenda");
+          jumpToTab("agenda", navTimerRef);
           return;
         }
         if (e.key === "p") {
           e.preventDefault();
-          jumpToTab("projects");
+          jumpToTab("projects", navTimerRef);
           return;
         }
         if (e.key === "j") {
           e.preventDefault();
-          jumpBucket(1);
+          jumpBucket(1, navTimerRef);
           return;
         }
         if (e.key === "k") {
           e.preventDefault();
-          jumpBucket(-1);
+          jumpBucket(-1, navTimerRef);
           return;
         }
       }
 
-      // Tab / Shift+Tab — cross bucket boundary
+      // Tab / Shift+Tab — cross bucket boundary.
+      // H-1 — only hijack when the agenda itself owns focus. The listbox
+      // container on .agenda-view is tabIndex=-1 and holds "virtual" focus
+      // via aria-activedescendant. If any input/button/select elsewhere
+      // has focus, let the browser's natural Tab order work.
       if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        // Only hijack Tab when our view has a selected row AND we're in Agenda
-        if (state.activeTab === "agenda" && state.selectedTaskId) {
+        const ae = document.activeElement as HTMLElement | null;
+        const agendaOwnsFocus =
+          ae === null ||
+          ae === document.body ||
+          ae.closest<HTMLElement>(".agenda-view") !== null;
+        if (
+          state.activeTab === "agenda" &&
+          state.selectedTaskId &&
+          agendaOwnsFocus
+        ) {
           e.preventDefault();
-          jumpBucket(e.shiftKey ? -1 : 1);
+          jumpBucket(e.shiftKey ? -1 : 1, navTimerRef);
           return;
         }
         // Otherwise let the browser handle normal focus nav
@@ -225,11 +242,26 @@ export function useKeyboardNav(
   }, [onFocusQuickAdd, onFocusSearch, onEnterEdit, onToggleSelected, onCycleTheme, onEnterExpand]);
 }
 
-function jumpToTab(tab: ActiveTab): void {
+type TimerRef = { current: ReturnType<typeof setTimeout> | null };
+
+/** C-3 — cancel any pending nav timer before scheduling a new one. */
+function cancelPendingNav(timerRef: TimerRef): void {
+  if (timerRef.current !== null) {
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
+}
+
+function jumpToTab(tab: ActiveTab, timerRef: TimerRef): void {
+  cancelPendingNav(timerRef);
   const state = useSidebarStore.getState();
   state.setActiveTab(tab);
+  // O-4 — clear transient detail-panel state on tab switch so a task with
+  // the same sanitized id in the new tab doesn't silently inherit expand.
+  state.setExpandedTaskId(null);
   // Select the first task in the new view after a short render tick
-  setTimeout(() => {
+  timerRef.current = setTimeout(() => {
+    timerRef.current = null;
     const ids = getVisibleTaskIds();
     if (ids.length > 0) {
       useSidebarStore.getState().setSelectedTaskId(ids[0]);
@@ -284,10 +316,13 @@ function moveSelectionBucketBounded(
 }
 
 /**
- * D15 — jumping to an adjacent bucket. If the target bucket is collapsed,
- * auto-expand it first, then select the first row.
+ * D15 — jumping to an adjacent bucket. Skips EMPTY buckets (O-2/C-2) so
+ * gj/gk and Tab/Shift+Tab always land on a bucket with selectable rows.
+ * If the target bucket is collapsed but non-empty, auto-expand it first.
+ * C-3 — pending timeout cancellable via timerRef.
  */
-function jumpBucket(direction: 1 | -1): void {
+function jumpBucket(direction: 1 | -1, timerRef: TimerRef): void {
+  cancelPendingNav(timerRef);
   const state = useSidebarStore.getState();
   const buckets = getVisibleBuckets();
   if (buckets.length === 0) return;
@@ -295,30 +330,64 @@ function jumpBucket(direction: 1 | -1): void {
   const currentBucket =
     state.selectedTaskId !== null ? bucketOfRow(state.selectedTaskId) : null;
 
-  let idx: number;
+  // Build the candidate list in the direction we're heading, excluding the
+  // current bucket. First bucket containing rendered task rows wins.
+  let startIdx: number;
+  let boundIdx: number;
   if (currentBucket === null) {
-    idx = direction === 1 ? 0 : buckets.length - 1;
+    // No current selection — scan from the start (direction=1) or end (-1).
+    startIdx = direction === 1 ? 0 : buckets.length - 1;
+    boundIdx = direction === 1 ? buckets.length : -1;
   } else {
     const cur = buckets.indexOf(currentBucket);
-    idx = Math.max(0, Math.min(buckets.length - 1, cur + direction));
-    if (idx === cur) return; // at edge
+    if (cur === -1) {
+      startIdx = direction === 1 ? 0 : buckets.length - 1;
+      boundIdx = direction === 1 ? buckets.length : -1;
+    } else {
+      startIdx = cur + direction;
+      boundIdx = direction === 1 ? buckets.length : -1;
+    }
   }
 
-  const targetBucket = buckets[idx];
-  const collapsed = state.collapsedBuckets.has(targetBucket as BucketName);
-  if (collapsed) {
+  let targetBucket: string | null = null;
+  for (let i = startIdx; i !== boundIdx; i += direction) {
+    if (i < 0 || i >= buckets.length) break;
+    const candidate = buckets[i];
+    // A bucket counts as non-empty if it has rendered rows OR is collapsed
+    // with a >0 count (we'll auto-expand it below). Empty-always-shown
+    // buckets (Overdue/Today/Tomorrow with 0 tasks) get skipped.
+    const isCollapsed = state.collapsedBuckets.has(candidate as BucketName);
+    if (isCollapsed) {
+      // Look up the count from the header's displayed number; >0 means
+      // collapsed-non-empty, which we should auto-expand and select.
+      const header = document.querySelector<HTMLElement>(
+        `section[data-bucket="${candidate}"] .bucket-header .bucket-count`
+      );
+      const count = header ? parseInt(header.textContent ?? "0", 10) || 0 : 0;
+      if (count > 0) {
+        targetBucket = candidate;
+        break;
+      }
+    } else if (getTaskIdsInBucket(candidate).length > 0) {
+      targetBucket = candidate;
+      break;
+    }
+  }
+
+  if (targetBucket === null) return; // no non-empty bucket in that direction
+
+  // Auto-expand if collapsed.
+  if (state.collapsedBuckets.has(targetBucket as BucketName)) {
     state.setBucketCollapsed(targetBucket as BucketName, false);
   }
 
-  // Wait for the newly-revealed rows to render, then select first.
-  setTimeout(() => {
-    const ids = getTaskIdsInBucket(targetBucket);
+  timerRef.current = setTimeout(() => {
+    timerRef.current = null;
+    const ids = getTaskIdsInBucket(targetBucket!);
     if (ids.length > 0) {
       useSidebarStore.getState().setSelectedTaskId(ids[0]);
-    } else {
-      // Empty bucket (e.g. Overdue with 0) — clear selection so next j/k
-      // starts fresh from the next bucket.
-      useSidebarStore.getState().setSelectedTaskId(null);
     }
+    // If the auto-expanded bucket turns out to be genuinely empty (race),
+    // keep the previous selection rather than nulling it.
   }, 50);
 }

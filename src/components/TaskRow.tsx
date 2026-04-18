@@ -8,7 +8,7 @@ import {
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
 import { TaskDetailPanel } from "./TaskDetailPanel.js";
-import { relativeDue } from "../lib/format.js";
+import { relativeDue, parseISODate, diffDays } from "../lib/format.js";
 
 interface TaskRowProps {
   task: Task;
@@ -16,6 +16,12 @@ interface TaskRowProps {
   tasksPath?: string;
   projects?: Project[];
   indent?: boolean;
+  /**
+   * O-1 — shared "now" from the parent (AgendaView). Falls back to
+   * `new Date()` when rendered outside a bucketed context (e.g. the
+   * Projects view) so the parent ProjectsView doesn't have to plumb it.
+   */
+  now?: Date;
 }
 
 const ERROR_DOT_DURATION_MS = 2000;
@@ -23,8 +29,9 @@ const ERROR_DOT_DURATION_MS = 2000;
 // Map priority rank to a short display label
 const RANK_LABEL: Record<string, string> = { high: "H", medium: "M", low: "L" };
 
-export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowProps) {
+export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: TaskRowProps) {
   const taskId = task.id.replace(/[^a-zA-Z0-9-_]/g, "_");
+  const nowStamp = now ?? new Date();
   const optimisticToggle = useSidebarStore((s) => s.optimisticToggle);
   const markTaskError = useSidebarStore((s) => s.markTaskError);
   const clearTaskError = useSidebarStore((s) => s.clearTaskError);
@@ -155,6 +162,22 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
   const isBlocked = task.status === "blocked";
   const isDone = task.done || task.status === "done";
 
+  // C-4 — derive due-chip styling from the SAME local time reference used
+  // for bucketing. The server also emits `task.overdue`/`task.dueToday`,
+  // but those can disagree with local timezone near UTC boundaries. Trust
+  // our local calculation here for visual consistency with the Agenda
+  // bucket assignment.
+  let isOverdueLocal = false;
+  let isDueTodayLocal = false;
+  if (task.due) {
+    const dueDate = parseISODate(task.due);
+    if (dueDate) {
+      const d = diffDays(nowStamp, dueDate);
+      if (d < 0) isOverdueLocal = true;
+      else if (d === 0) isDueTodayLocal = true;
+    }
+  }
+
   const rowClasses = [
     "task-row",
     indent ? "task-row--indent" : "",
@@ -229,6 +252,9 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
     <div
       className={`task-row-wrapper${isExpanded ? " task-row-wrapper--expanded" : ""}`}
       data-task-wrapper
+      role="option"
+      aria-selected={isSelected}
+      id={`agenda-row-${taskId}`}
     >
       <div
         className={rowClasses}
@@ -269,10 +295,10 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
             )}
             {task.due && (
               <span
-                className={`task-due${task.overdue ? " task-due--overdue" : task.dueToday ? " task-due--today" : ""}`}
+                className={`task-due${isOverdueLocal ? " task-due--overdue" : isDueTodayLocal ? " task-due--today" : ""}`}
                 title={task.due}
               >
-                {relativeDue(task.due)}
+                {relativeDue(task.due, nowStamp)}
               </span>
             )}
             {task.priority && (
@@ -283,7 +309,13 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent }: TaskRowP
                 {RANK_LABEL[task.priority.rank] ?? task.priority.rank.charAt(0).toUpperCase()}
               </span>
             )}
-            {hasError && <span className="task-error-dot" title="Write failed" />}
+            {hasError && (
+              <>
+                <span className="task-error-dot" title="Write failed" aria-hidden="true" />
+                {/* M-5 — screen-reader announcement for the write failure */}
+                <span role="alert" className="sr-only">Write failed.</span>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -26,11 +26,25 @@ export function diffDays(a: Date, b: Date): number {
  * Parse a YYYY-MM-DD string as a LOCAL date (not UTC).
  * `new Date("2026-04-18")` would parse as UTC midnight → wrong day in
  * negative-offset zones. Explicit `T00:00:00` anchors to local midnight.
+ *
+ * C-5 — strict calendar validation: `new Date("2026-02-31")` silently
+ * rolls to March 3; reject impossible dates by checking round-trip.
  */
 export function parseISODate(iso: string): Date | null {
   if (typeof iso !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
-  const d = new Date(`${iso}T00:00:00`);
-  return isNaN(d.getTime()) ? null : d;
+  const [yStr, mStr, dStr] = iso.split("-");
+  const y = parseInt(yStr, 10);
+  const m = parseInt(mStr, 10);
+  const d = parseInt(dStr, 10);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const out = new Date(y, m - 1, d, 0, 0, 0, 0);
+  if (isNaN(out.getTime())) return null;
+  // Reject rollover: 2026-02-31 → March 3 fails this check.
+  if (out.getFullYear() !== y || out.getMonth() !== m - 1 || out.getDate() !== d) {
+    return null;
+  }
+  return out;
 }
 
 /**
@@ -57,6 +71,15 @@ export function relativeDue(iso: string | undefined, now: Date = new Date()): st
   if (d === 1) return "+1d";
   if (d <= 6) return due.toLocaleDateString("en-US", { weekday: "short" }); // Mon / Tue / …
   if (d <= 60) return `+${d}d`;
+  // O-3 — include 2-digit year for dates >365 days away to disambiguate
+  // "Sep 1 (which year?)". Same-year far-dates still show "Sep 1".
+  if (d > 365) {
+    return due.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "2-digit",
+    });
+  }
   return due.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 

@@ -6,6 +6,7 @@ import { BucketHeader } from "../components/BucketHeader.js";
 import { EmptyState } from "../components/EmptyState.js";
 import { useSidebarStore } from "../store.js";
 import { groupIntoBuckets } from "../lib/time-buckets.js";
+import { AGENDA_PROJECT_STATUSES } from "../lib/project-scopes.js";
 
 /**
  * Agenda view — time-bucketed cross-project task list.
@@ -21,24 +22,6 @@ interface AgendaViewProps {
   projects: Project[];
 }
 
-// Projects whose status means their tasks SHOULD appear in Agenda.
-// Done / cancelled / archived projects are excluded so the Agenda stays
-// focused on actionable work.
-const AGENDA_PROJECT_STATUSES = new Set([
-  "active",
-  "backlog",
-  "blocked",
-  "paused",
-  // Also accept on-track / at-risk / off-track / overdue for compat with the
-  // old entity-schemas.md enum (still in use in some README files per the
-  // plan's unresolved spec contradiction).
-  "on-track",
-  "at-risk",
-  "off-track",
-  "overdue",
-  "not-started",
-]);
-
 interface EnrichedTask extends Task {
   projectSlug: string;
   projectTitle: string;
@@ -48,6 +31,12 @@ interface EnrichedTask extends Task {
 export function AgendaView({ projects }: AgendaViewProps) {
   const collapsedBuckets = useSidebarStore((s) => s.collapsedBuckets);
   const toggleBucketCollapsed = useSidebarStore((s) => s.toggleBucketCollapsed);
+  const selectedTaskId = useSidebarStore((s) => s.selectedTaskId);
+
+  // O-1 — single source of truth for "now" across this render. Passed to
+  // groupIntoBuckets (bucket classification) AND via TaskRow (relativeDue).
+  // Midnight race between two independent new Date() calls is eliminated.
+  const now = useMemo(() => new Date(), [projects]); // refreshes on vault updates
 
   // Flatten all eligible tasks with project metadata attached.
   const allTasks = useMemo<EnrichedTask[]>(() => {
@@ -68,7 +57,7 @@ export function AgendaView({ projects }: AgendaViewProps) {
 
   // Group into time buckets. This is cheap for 2k tasks; no memo needed
   // beyond React's natural batching.
-  const groups = useMemo(() => groupIntoBuckets(allTasks), [allTasks]);
+  const groups = useMemo(() => groupIntoBuckets(allTasks, now), [allTasks, now]);
 
   // Count live (not-done) tasks per bucket for the "Overdue is empty" signal
   const liveCounts = useMemo(() => {
@@ -84,37 +73,63 @@ export function AgendaView({ projects }: AgendaViewProps) {
   }
 
   return (
-    <div className="agenda-view" data-view="agenda">
+    // H-2 — aria-activedescendant pattern: the agenda itself is the listbox,
+    // each row is an option with a stable id. j/k nav updates
+    // activedescendant without moving browser focus, which lets us keep the
+    // rest of the DOM's focus order intact (search inputs, tabs, etc.).
+    <div
+      className="agenda-view"
+      data-view="agenda"
+      role="listbox"
+      aria-label="Agenda"
+      aria-activedescendant={selectedTaskId ? `agenda-row-${selectedTaskId}` : undefined}
+      tabIndex={-1}
+    >
       {groups.map((group) => {
         const collapsed = collapsedBuckets.has(group.bucket);
         const panelId = `bucket-panel-${group.bucket}`;
+        const headingId = `bucket-heading-${group.bucket}`;
         return (
-          <section key={group.bucket} className="bucket" data-bucket={group.bucket}>
+          // C-1 — single [data-bucket] node per bucket (on the <section>);
+          // BucketHeader must NOT also emit data-bucket.
+          <section
+            key={group.bucket}
+            className="bucket"
+            data-bucket={group.bucket}
+            aria-labelledby={headingId}
+          >
             <BucketHeader
               bucket={group.bucket}
+              headingId={headingId}
+              panelId={panelId}
               count={group.tasks.length}
               liveCount={liveCounts.get(group.bucket) ?? 0}
               collapsed={collapsed}
               onToggle={() => toggleBucketCollapsed(group.bucket)}
             />
-            {!collapsed && group.tasks.length > 0 && (
-              <div id={panelId} className="bucket-body" role="list">
-                {group.tasks.map((t, idx) => (
+            {/* M-2 — bucket-body stays in the DOM when collapsed (hidden
+                attribute) so aria-controls on the header always resolves. */}
+            <div
+              id={panelId}
+              className="bucket-body"
+              role="group"
+              hidden={collapsed}
+            >
+              {group.tasks.length > 0 ? (
+                group.tasks.map((t, idx) => (
                   <TaskRow
                     key={t.id}
                     task={t}
                     isFirst={idx === 0}
                     tasksPath={t.projectTasksPath}
                     projects={projects}
+                    now={now}
                   />
-                ))}
-              </div>
-            )}
-            {!collapsed && group.tasks.length === 0 && (
-              <div className="bucket-empty" id={panelId}>
-                Nothing here.
-              </div>
-            )}
+                ))
+              ) : (
+                <div className="bucket-empty">Nothing here.</div>
+              )}
+            </div>
           </section>
         );
       })}

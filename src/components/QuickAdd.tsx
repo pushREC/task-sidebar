@@ -99,7 +99,9 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
       )}
       <div className="quick-add">
         {lastError && (
-          <div className="quick-add-error">{lastError}</div>
+          <div className="quick-add-error" role="alert" aria-live="assertive">
+            {lastError}
+          </div>
         )}
         <div className="quick-add-row">
           <select
