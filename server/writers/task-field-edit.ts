@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import matter from "gray-matter";
 import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
+import { assertMtimeMatch } from "./mtime-lock.js";
 
 /**
  * Updates a single frontmatter field on a canonical entity task file.
@@ -15,6 +16,10 @@ export interface TaskFieldEditInput {
   entityPath: string;
   field: string;
   value: unknown;
+  // Sprint H.2.3 — optional optimistic-concurrency token. Same semantics
+  // as task-body-edit: if present, server stats the file + compares
+  // mtime ISO strings; mismatch → 409 with currentModified.
+  expectedModified?: string;
 }
 
 export interface TaskFieldEditResult {
@@ -134,6 +139,10 @@ export async function editTaskField(input: TaskFieldEditInput): Promise<TaskFiel
   if (!existsSync(resolvedPath)) {
     throw safetyError(`Entity task file not found: ${toRelative(resolvedPath)}`, 404);
   }
+
+  // Sprint H.2.3 — optimistic-lock BEFORE readFile. No-op when
+  // expectedModified is undefined (backward-compat).
+  await assertMtimeMatch(resolvedPath, input.expectedModified);
 
   const raw = await readFile(resolvedPath, "utf8");
   const parsed = matter(raw);

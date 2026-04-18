@@ -155,7 +155,7 @@ router.post("/tasks/move", async (req: Request, res: Response) => {
 // ─── POST /api/tasks/field-edit ──────────────────────────────────────────────
 
 router.post("/tasks/field-edit", async (req: Request, res: Response) => {
-  const { entityPath, field, value } = req.body as Record<string, unknown>;
+  const { entityPath, field, value, expectedModified } = req.body as Record<string, unknown>;
 
   if (typeof entityPath !== "string") {
     res.status(400).json({ ok: false, error: "entityPath must be a string" });
@@ -169,9 +169,19 @@ router.post("/tasks/field-edit", async (req: Request, res: Response) => {
     res.status(400).json({ ok: false, error: "value is required" });
     return;
   }
+  // Sprint H.2.3 — optional expectedModified (same contract as body-edit).
+  if (expectedModified !== undefined && typeof expectedModified !== "string") {
+    res.status(400).json({ ok: false, error: "expectedModified must be a string if present" });
+    return;
+  }
 
   try {
-    const result = await editTaskField({ entityPath, field, value });
+    const result = await editTaskField({
+      entityPath,
+      field,
+      value,
+      expectedModified: typeof expectedModified === "string" ? expectedModified : undefined,
+    });
     res.json({ ok: true, entityPath: result.entityPath });
   } catch (err) {
     handleError(err, res);
