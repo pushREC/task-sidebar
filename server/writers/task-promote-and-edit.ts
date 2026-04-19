@@ -2,11 +2,9 @@ import { readFile, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join, dirname } from "path";
-import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
+import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT } from "../safety.js";
 import { writeFileExclusive, writeFileAtomic } from "./atomic.js";
 import { editTaskField } from "./task-field-edit.js";
-
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
 
 // Matches inline checkbox tasks including [/]
 const TASK_LINE_RE = /^(\s*)- \[([ xX/])\]\s+(.+)$/;

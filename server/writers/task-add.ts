@@ -1,10 +1,8 @@
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
-import { assertSafeTasksPath, escapeTaskText, safetyError } from "../safety.js";
+import { assertSafeTasksPath, escapeTaskText, safetyError, VAULT_ROOT } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
-
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
 
 export interface AddTaskInput {
   slug: string;

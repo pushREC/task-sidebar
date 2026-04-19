@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
-import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
+import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { moveToTombstone, moveInlineToTombstone } from "./task-tombstone.js";
 
@@ -21,7 +21,7 @@ import { moveToTombstone, moveInlineToTombstone } from "./task-tombstone.js";
  * that escape VAULT_ROOT are uniformly rejected.
  */
 
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault/";
+const VAULT_ROOT = VAULT_ROOT_SLASH;
 
 function toRelative(abs: string): string {
   return abs.startsWith(VAULT_ROOT) ? abs.slice(VAULT_ROOT.length) : abs;

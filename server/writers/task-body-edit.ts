@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import matter from "gray-matter";
-import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
+import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { assertMtimeMatch } from "./mtime-lock.js";
 
@@ -20,7 +20,7 @@ import { assertMtimeMatch } from "./mtime-lock.js";
  *     second frontmatter block to re-parsers; defensive ban (Sprint E C1)
  */
 
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault/";
+const VAULT_ROOT = VAULT_ROOT_SLASH;
 const MAX_BODY_LEN = 64 * 1024;   // 64KB ceiling on notes
 
 function toRelative(abs: string): string {

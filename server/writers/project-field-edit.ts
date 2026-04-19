@@ -2,11 +2,8 @@ import { readFile } from "fs/promises";
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
 import matter from "gray-matter";
-import { assertSafeTasksPath, safetyError } from "../safety.js";
+import { assertSafeTasksPath, safetyError, VAULT_ROOT, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
-
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
-const VAULT_ROOT_SLASH = VAULT_ROOT + "/";
 
 // Canonical project fields editable via the field-edit endpoint.
 // `status` is ALSO here — project-status doesn't have a state machine yet.

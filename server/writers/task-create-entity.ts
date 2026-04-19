@@ -1,10 +1,8 @@
 import { existsSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join } from "path";
-import { assertSafeTasksPath, escapeTaskText, safetyError } from "../safety.js";
+import { assertSafeTasksPath, escapeTaskText, safetyError, VAULT_ROOT } from "../safety.js";
 import { writeFileExclusive } from "./atomic.js";
-
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
 
 /**
  * Slugify an action string into a valid filename slug.

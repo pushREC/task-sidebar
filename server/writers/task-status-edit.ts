@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import matter from "gray-matter";
-import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
+import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { queueReconcile, cancelReconcile } from "../status-reconcile-queue.js";
 
@@ -31,7 +31,6 @@ export interface TaskStatusEditResult {
   reconcileFired: boolean;
 }
 
-const VAULT_ROOT_SLASH = "/Users/robertzinke/pushrec-vault/";
 function toRelative(abs: string): string {
   return abs.startsWith(VAULT_ROOT_SLASH) ? abs.slice(VAULT_ROOT_SLASH.length) : abs;
 }

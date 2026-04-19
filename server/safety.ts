@@ -1,7 +1,21 @@
 import { resolve, dirname, basename } from "path";
 import { realpathSync, existsSync } from "fs";
 
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
+/**
+ * VAULT_ROOT — absolute path to the PARA-structured vault this sidebar
+ * serves. Public release uses env var with a sensible default; forks can
+ * point at any markdown vault shaped as `<VAULT_ROOT>/1-Projects/<slug>/`.
+ *
+ * Single source of truth — every other file in the codebase imports
+ * from here (was previously duplicated across 13 files; consolidated
+ * during the public-release sanitization pass).
+ */
+const DEFAULT_VAULT = resolve(process.cwd(), "sample-vault");
+export const VAULT_ROOT = process.env.VAULT_ROOT
+  ? resolve(process.env.VAULT_ROOT)
+  : DEFAULT_VAULT;
+/** VAULT_ROOT with trailing slash, for startsWith string-prefix checks. */
+export const VAULT_ROOT_SLASH = VAULT_ROOT + "/";
 
 const FORBIDDEN_SEGMENTS = ["4-Archive", "Templates", ".obsidian"];
 

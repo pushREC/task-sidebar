@@ -1,6 +1,6 @@
 # Plan II v2 — Implementation State
 
-**Plan source**: `/Users/robertzinke/.claude/plans/spicy-jumping-pike.md` (Plan II v2 section starting line 9)
+**Plan source**: `docs/examples/plan-file-example.md` (see docs/PLANNING-DISCIPLINE.md for the format)
 **Branch**: main (local scoped git repo per Plan I pattern)
 **HEAD at Plan II start**: 2ea75c4
 **Session started**: 2026-04-19
@@ -9,8 +9,8 @@
 ## Phase H — Safety + Recoverability
 
 ### H.0 Entry
-- H.0.1 Assumption-annihilation check — COMPLETE (20/20 PASS, see `/tmp/plan-ii-assumption-checks.txt`)
-- H.0.2 Entry-gate verification — COMPLETE (4/4 PASS, see `/tmp/plan-ii-h-entry-gate.txt`)
+- H.0.1 Assumption-annihilation check — COMPLETE (20/20 PASS, log at `docs/examples/verification-outputs/plan-ii-assumption-checks.txt` if preserved)
+- H.0.2 Entry-gate verification — COMPLETE (4/4 PASS)
 - H.0.3 Create implementation-state.md — COMPLETE (commit 7955778) ← THIS FILE
 - H.0.4 Create PLAN-II-LOG.md — COMPLETE (commit 7955778)
 

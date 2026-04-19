@@ -1,6 +1,13 @@
 import { spawn } from "child_process";
 
-const RECONCILE_SCRIPT = "/Users/robertzinke/.claude/skills/life-os/scripts/status_reconcile.py";
+/**
+ * Optional integration: path to life-os status_reconcile.py.
+ * Leave RECONCILE_SCRIPT_PATH unset to run without side-effect reconciliation
+ * (done-transitions stay local to the task file; no parent-goal rollup).
+ * Set to an absolute path to enable the fire-and-forget call.
+ * See docs/LIFE-OS.md for wiring details.
+ */
+const RECONCILE_SCRIPT: string | null = process.env.RECONCILE_SCRIPT_PATH || null;
 const FIRE_FORGET_TIMEOUT_MS = 3000;
 
 /**
@@ -12,6 +19,9 @@ const FIRE_FORGET_TIMEOUT_MS = 3000;
  * Call this after any write that transitions a task status to "done".
  */
 export function fireStatusReconcile(): void {
+  // Graceful no-op if reconcile script not configured (public release default).
+  if (RECONCILE_SCRIPT === null) return;
+
   let proc: ReturnType<typeof spawn> | null = null;
 
   try {

@@ -1,6 +1,13 @@
 import { spawn } from "child_process";
 
-const PRIORITY_SCRIPT = "/Users/robertzinke/.claude/skills/life-os/scripts/priority_infer.py";
+/**
+ * Optional integration: path to life-os priority_infer.py.
+ * Leave PRIORITY_SCRIPT_PATH unset to run without priority inference
+ * (tasks will surface as `priority: null` and the UI renders an unranked
+ * chip). Set to an absolute path to enable the subprocess-pooled call.
+ * See docs/LIFE-OS.md for wiring details.
+ */
+const PRIORITY_SCRIPT: string | null = process.env.PRIORITY_SCRIPT_PATH || null;
 const POOL_SIZE = 4;
 const TIMEOUT_MS = 500;
 const LRU_CAP = 500;
@@ -109,6 +116,10 @@ export async function computePriority(input: PriorityInput): Promise<PriorityRes
     return null;
   }
 
+  // Graceful degradation: PRIORITY_SCRIPT_PATH not configured (public
+  // release default). UI handles `priority: null` via the unranked chip.
+  if (PRIORITY_SCRIPT === null) return null;
+
   const key = cacheKey(input);
   const cached = cacheGet(key);
   if (cached) return cached;
@@ -130,13 +141,20 @@ export async function computePriority(input: PriorityInput): Promise<PriorityRes
 
 function runPriorityScript(input: PriorityInput): Promise<PriorityResult | null> {
   return new Promise((resolve) => {
+    // computePriority already guards PRIORITY_SCRIPT !== null before calling
+    // us, but TS can't narrow across the function boundary. Re-assert here.
+    if (PRIORITY_SCRIPT === null) {
+      resolve(null);
+      return;
+    }
+    const scriptPath: string = PRIORITY_SCRIPT;
     const args = ["--json"];
     if (input.impact) args.push("--impact", input.impact);
     if (input.urgency) args.push("--urgency", input.urgency);
     if (input.due) args.push("--due", input.due);
     if (input.parentGoalTimeframe) args.push("--goal-timeframe", input.parentGoalTimeframe);
 
-    const proc = spawn("python3", [PRIORITY_SCRIPT, ...args], {
+    const proc = spawn("python3", [scriptPath, ...args], {
       timeout: TIMEOUT_MS,
       stdio: ["ignore", "pipe", "pipe"],
     });

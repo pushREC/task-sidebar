@@ -1,7 +1,7 @@
 import chokidar, { type FSWatcher } from "chokidar";
 import { join } from "path";
+import { VAULT_ROOT } from "./safety.js";
 
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
 const PROJECTS_DIR = join(VAULT_ROOT, "1-Projects");
 
 // chokidar v5 dropped glob expansion — watch the directory with depth:2 to reach tasks/*.md

@@ -2,10 +2,8 @@ import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join, dirname } from "path";
-import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
+import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
-
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
 
 // Matches inline checkbox tasks including [/]
 const TASK_LINE_RE = /^(\s*)- \[([ xX/])\]\s+(.+)$/;

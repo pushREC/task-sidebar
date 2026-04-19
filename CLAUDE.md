@@ -1,19 +1,19 @@
-# vault-sidebar — Agent Governance
+# task-sidebar — Agent Governance
 
-> **Read this file first when working in `codebases/vault-sidebar/`.**
-> Vault project metadata lives at [`1-Projects/vault-sidebar/`](../../1-Projects/vault-sidebar/).
-> Start with that README + HANDOFF.md before making changes.
+> **Read this file first when working in this repo.**
+> High-level architecture lives in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> Design doctrine lives in [`docs/UI-UX.md`](docs/UI-UX.md).
+> Decision rationale lives in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 This document is the single source of truth for HOW code is changed here.
 Violating any rule in this file will break either the Zero Assumptions policy,
-the aesthetic lock, or the life-os schema contract.
+the aesthetic lock, or the data-model contract.
 
 ---
 
 ## Zero Assumptions Policy
 
-Inherits the vault-root [CLAUDE.md](../../CLAUDE.md) policy in full. Three
-specific corollaries for this codebase:
+Three corollaries specific to task-sidebar:
 
 1. **Never assume server-client contract** — if you rename a field on the
    Task or Project type in `server/vault-index.ts`, you MUST also update
@@ -22,10 +22,11 @@ specific corollaries for this codebase:
 
 2. **Never write to the vault without `assertSafeTasksPath` + `writeFileAtomic`
    (or `writeFileExclusive` for creates).** Path safety is non-negotiable.
+   See [`docs/SECURITY.md`](docs/SECURITY.md) for the full safety-boundary catalog.
 
 3. **Never assume `priority_infer.py` or `status_reconcile.py` is reachable.**
-   Both are shell-outs with 500ms / 3s timeouts. Code must handle `null` /
-   timeout gracefully. `priority === null` is a valid state.
+   Both are optional env-gated subprocess integrations (see [`docs/LIFE-OS.md`](docs/LIFE-OS.md)).
+   Graceful degradation is required — `priority === null` is a valid state.
 
 ---
 
@@ -133,21 +134,18 @@ codebases/vault-sidebar/
 
 ## Integration points (read these before changing anything related)
 
-| External | Path | What we use it for |
-|----------|------|--------------------|
-| life-os priority inference | `~/.claude/skills/life-os/scripts/priority_infer.py` | Subprocess call from `server/priority.ts` |
-| life-os status reconcile | `~/.claude/skills/life-os/scripts/status_reconcile.py` | Fire-and-forget from `server/status-reconcile.ts` on done transitions |
-| vault-manager skill | `~/.claude/skills/vault-manager/` | Not called at runtime; we implement safety in-process, but our validation rules MUST match vault-manager's allowlist |
-| life-os entity schema | `~/.claude/skills/life-os/references/entity-schemas.md` | Task + Project frontmatter contract |
-| Obsidian Tasks plugin | (external) | `[/]` checkbox char → in-progress per convention |
-| Preview panel | Claude Code desktop app | Hosts the sidebar; `.claude/launch.json` declares the dev server |
-| claude-peers broker | `127.0.0.1:7899` (via `codebases/claude-peers-mcp/`) | Planned v2.1 chat bridge |
+| External | Configured via | What it provides |
+|----------|-----------------|------------------|
+| life-os priority inference | `PRIORITY_SCRIPT_PATH` env var (see `.env.example`) | Optional — computes `priority.rank` + `priority.score` from impact/urgency/due/goal-timeframe. Without it, tasks surface `priority: null`. |
+| life-os status reconcile | `RECONCILE_SCRIPT_PATH` env var | Optional — fires after `status: "done"` transitions for parent-goal rollup. Without it, done-transitions stay local. |
+| Obsidian Tasks plugin convention | (external) | `[/]` checkbox char → in-progress per convention |
+| Vault filesystem | `VAULT_ROOT` env var (defaults to `./sample-vault`) | Your PARA-structured vault |
+
+See [`docs/LIFE-OS.md`](docs/LIFE-OS.md) for the priority-script API contract if you want to enable the integration.
 
 ---
 
 ## Safety invariants — non-negotiable
-
-From vault-root [CLAUDE.md](../../CLAUDE.md) + life-os + sprint-2 hardening:
 
 - Never write to `4-Archive/`, `Templates/`, `.obsidian/`
 - Never accept a path that escapes VAULT_ROOT (realpath + startsWith check)
@@ -158,15 +156,15 @@ From vault-root [CLAUDE.md](../../CLAUDE.md) + life-os + sprint-2 hardening:
 - Status transitions MUST go through `/api/tasks/status-edit` (triggers
   reconcile); `field-edit` redirects with 400 if `field === "status"`
 - Response paths MUST be vault-relative (`1-Projects/...`), never absolute
-  (`/Users/...`). M19 sprint-2 guarantee.
+  (`/Users/...`). Lock #7 guarantee.
+
+Full catalog + live verification commands in [`docs/SECURITY.md`](docs/SECURITY.md).
 
 ---
 
 ## When a sprint completes
 
-Update [`../../1-Projects/vault-sidebar/HANDOFF.md`](../../1-Projects/vault-sidebar/HANDOFF.md)
-with what shipped. Mark tasks in [`../../1-Projects/vault-sidebar/tasks.md`](../../1-Projects/vault-sidebar/tasks.md) as `- [x]` + `@owner`.
-Run `scripts/verify.sh` and paste the 68/68 result into HANDOFF.
+Document what shipped in a project HANDOFF / changelog of your own choosing. Mark TODO items complete. Run `scripts/verify.sh` and confirm `37/37 passed, 0 failed` (against the bundled sample-vault) before declaring done.
 
 ---
 
@@ -182,12 +180,10 @@ Do NOT build here:
 - Drag-drop task reorder
 - Tags with colored enum UI
 - Subtasks nested editing (v2.2 maybe; not now)
-- Any feature that reads `~/.claude/memory/memory.db` or similar
 - Any auth layer (single-user loopback only)
 - Any deployment target (local-only, never leaves the laptop)
 
-If a user asks for one of these, first ask whether the right answer is to do
-it in [pushrec-dashboard](../../1-Projects/pushrec-dashboard) instead.
+If a user asks for one of these, first ask whether a different tool is a better fit for the need. task-sidebar is intentionally narrow; dilution kills the thing that makes it good.
 
 ---
 

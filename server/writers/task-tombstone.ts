@@ -34,7 +34,7 @@ import { writeFileAtomic, writeFileExclusive } from "./atomic.js";
  *   - inline: `{timestamp}__inline__{uriEncoded(tasksPath)}__{line}__{base64(text)}.tombstone`
  */
 
-export const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
+import { VAULT_ROOT } from "../safety.js";
 export const TOMBSTONE_DIR = `${VAULT_ROOT}/.vault-sidebar-tombstones`;
 export const TOMBSTONE_TTL_MS = 8000; // UndoToast 5s + 3s network-RTT margin (R2 D4)
 export const ORPHAN_TTL_MS = 60 * 60 * 1000; // 1 hour

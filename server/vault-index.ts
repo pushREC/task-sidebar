@@ -3,8 +3,7 @@ import { join, dirname, basename } from "path";
 import glob from "fast-glob";
 import matter from "gray-matter";
 import { computePriority, type PriorityResult } from "./priority.js";
-
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
+import { VAULT_ROOT } from "./safety.js";
 
 /** Strips the VAULT_ROOT prefix to produce a vault-relative path. */
 function toRelativePath(absolutePath: string): string {

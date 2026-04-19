@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import matter from "gray-matter";
-import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
+import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { assertMtimeMatch } from "./mtime-lock.js";
 
@@ -26,7 +26,7 @@ export interface TaskFieldEditResult {
   entityPath: string;  // vault-relative — absolute paths never leak
 }
 
-const VAULT_ROOT = "/Users/robertzinke/pushrec-vault/";
+const VAULT_ROOT = VAULT_ROOT_SLASH;
 
 // Canonical task fields the client may edit directly via field-edit.
 // `status` is deliberately absent — use editTaskStatus instead.
