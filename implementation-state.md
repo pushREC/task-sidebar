@@ -135,3 +135,15 @@ All tasks NOT STARTED. Deferred to next session.
 - Deferred LOW: 3 (Gemini ERROR-DOT-FALLBACK-COPY, Gemini TRUNCATION-SURROGATE-BREAK, Codex R2-INLINE-RESTORE-ENOENT)
 - R3 SKIPPED per §R2.4 decision 6 (zero C/H/M post-fix, no regressions)
 - tsc 0, verify.sh 39/39 on fresh server, AI-tells clean — Sprint H R2 complete + ship-ready
+
+### Sprint H R2 cognitive-supremacy audit (2026-04-19, HEAD fd5a77b)
+- `/cognitive-supremacy` Tier-3 FULL STACK: 4 parallel orthogonal critics (plan↔code, code↔state, hidden-assumptions, severity+blast-radius)
+- Raw findings: 22 across 4 agents
+- After L3 adversarial reclassification: 3 actionable code fixes + 5 Sprint-I preempts + 12 accepts
+- Fixes applied in commit fd5a77b:
+  - F1 MEDIUM inline-restore ENOENT TOCTOU — readFile catches ENOENT → 404 (not 500)
+  - F2 MEDIUM aria-hidden stuck on delete — try/catch wraps deleteEntityTaskApi / deleteInlineTaskApi throw paths
+  - F3 LOW state-doc precision — "filename timestamp (primary) with fs.mtime fallback" replaces imprecise "not stat.mtimeMs"
+- Sprint I preempts added to plan §7 (B1-B5): sanity-rebuild seq, useShallow+Map, QuickAdd mount, aria-hidden preservation, invalidateProject ordering
+- Anti-mediocrity ≥8 on all 5 dimensions. Gate passes.
+- Sprint H is zero-known-gap as of HEAD post-supremacy-commit.
