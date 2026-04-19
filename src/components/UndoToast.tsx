@@ -62,12 +62,20 @@ export function UndoToast() {
 
   async function handleUndoClick() {
     if (!pendingUndo || isUndoing) return;
+    // Plan II Sprint H R2 D1 — identity-guarded finally.
+    // If the revert closure replaces pendingUndo with terminal feedback
+    // (e.g. BulkBar restore-failed toast), the finally block MUST NOT
+    // clear it. Capture the original reference by identity; only clear
+    // if the store still points at the same object post-revert.
+    const originalRef = pendingUndo;
     setIsUndoing(true);
     try {
       await pendingUndo.revert();
     } finally {
       setIsUndoing(false);
-      setPendingUndo(null);
+      if (useSidebarStore.getState().pendingUndo === originalRef) {
+        setPendingUndo(null);
+      }
     }
   }
 
