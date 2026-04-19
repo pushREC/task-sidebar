@@ -75,6 +75,10 @@ interface SidebarState {
   selectedTaskIds: Set<string>;
   /** Sprint G — one pending undo window at a time. `null` = no toast. */
   pendingUndo: PendingUndo | null;
+  /** Sprint H R2 D3 — monotonic seq of the most-recently-applied fetchVault
+   *  response. setVault(vault, seq) drops any write whose seq ≤ this value,
+   *  preventing stale concurrent fetches from clobbering newer state. */
+  maxAppliedVaultSeq: number;
 
   // ── Persisted view state ────────────────────────────────────────────────
   activeTab: ActiveTab;
@@ -93,7 +97,11 @@ interface SidebarState {
   paletteOpen: boolean;
 
   // ── Actions ─────────────────────────────────────────────────────────────
-  setVault: (vault: VaultResponse) => void;
+  /** Sprint H R2 D3 — optional `seq` routes concurrent-fetch ordering.
+   *  When provided and ≤ maxAppliedVaultSeq, the update is silently
+   *  dropped (newer state already applied). When omitted (SSE/legacy
+   *  callers), the update always applies. */
+  setVault: (vault: VaultResponse, seq?: number) => void;
   optimisticToggle: (taskId: string) => void;
   /** Sprint H R2 D2 — optional `message` argument routes to taskErrorMessages. */
   markTaskError: (taskId: string, message?: string) => void;
@@ -224,6 +232,7 @@ export const useSidebarStore = create<SidebarState>()(
       selectedTaskId: null,
       selectedTaskIds: new Set(),
       pendingUndo: null,
+      maxAppliedVaultSeq: 0,
       activeTab: "agenda",
       collapsedBuckets: new Set<BucketName>(DEFAULT_COLLAPSED),
       expandedProjects: new Set<string>(),
@@ -234,7 +243,7 @@ export const useSidebarStore = create<SidebarState>()(
       paletteOpen: false,
 
       // ── Actions ───────────────────────────────────────────────────────────
-      setVault(vault) {
+      setVault(vault, seq) {
         // Sprint C R3-C-2 (Codex) — inline task ids are line-based
         // (`inline:{slug}:{lineNumber}` in vault-index.ts). After a
         // promote+refetch the ids shift, so any errorTaskIds kept from
@@ -242,7 +251,23 @@ export const useSidebarStore = create<SidebarState>()(
         // inherited that line number. Clear on every vault update; it's
         // transient state (2s auto-clear anyway) and clearing avoids
         // the subtle mis-attach.
-        set({ vault, errorTaskIds: new Set(), taskErrorMessages: new Map() });
+        //
+        // Sprint H R2 D3 — if caller supplied a seq token, reject stale
+        // writes. Omitted seq → legacy code path (SSE trigger, initial
+        // fetch on boot) — always apply.
+        set((state) => {
+          if (seq !== undefined && seq <= state.maxAppliedVaultSeq) {
+            // Silently drop — a newer fetch already applied to store.
+            return state;
+          }
+          return {
+            ...state,
+            vault,
+            errorTaskIds: new Set(),
+            taskErrorMessages: new Map(),
+            maxAppliedVaultSeq: seq !== undefined ? seq : state.maxAppliedVaultSeq,
+          };
+        });
       },
 
       optimisticToggle(taskId) {

@@ -8,6 +8,7 @@ import {
   editTaskFieldApi,
   editTaskStatusApi,
   fetchVault,
+  nextVaultSeq,
   promoteAndEditTaskApi,
   promoteTaskApi,
   restoreTombstoneApi,
@@ -694,10 +695,13 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
     }, 6000);
     // Refetch so the panel shows fresh disk state. User's draft text
     // in any open Editable* is PRESERVED (state lives in the child).
+    // R2 D3 — pair with monotonic seq so a concurrent restore/delete
+    // refetch can't race us and apply stale vault data after ours.
+    const mtimeRefetchSeq = nextVaultSeq();
     void (async () => {
       try {
         const v = await fetchVault();
-        useSidebarStore.getState().setVault(v);
+        useSidebarStore.getState().setVault(v, mtimeRefetchSeq);
       } catch { /* SSE will catch up */ }
     })();
   }, []);
@@ -757,10 +761,12 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
 
     async function collapseAfterRefetch(): Promise<void> {
       // isDeleting was already set true at function entry — don't flip again.
+      // R2 D3 — seq-paired fetch so a concurrent refetch can't clobber us.
+      const collapseSeq = nextVaultSeq();
       let refetchFailed = false;
       try {
         const v = await fetchVault();
-        useSidebarStore.getState().setVault(v);
+        useSidebarStore.getState().setVault(v, collapseSeq);
       } catch {
         refetchFailed = true;
       }
@@ -808,9 +814,11 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           } catch {
             /* network/server error — silent; SSE will reconcile */
           }
+          // R2 D3 — seq-paired fetch inside revert closure.
+          const restoreSeq = nextVaultSeq();
           try {
             const v = await fetchVault();
-            useSidebarStore.getState().setVault(v);
+            useSidebarStore.getState().setVault(v, restoreSeq);
           } catch { /* ignore */ }
         },
       });

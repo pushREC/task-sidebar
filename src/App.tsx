@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Settings } from "lucide-react";
-import { fetchVault, subscribeVaultEvents, type SSEConnectionState } from "./api.js";
+import { fetchVault, nextVaultSeq, subscribeVaultEvents, type SSEConnectionState } from "./api.js";
 import { epochDayKey } from "./lib/format.js";
 import { useSidebarStore } from "./store.js";
 import { AgendaView } from "./views/AgendaView.js";
@@ -138,11 +138,14 @@ export function App() {
     };
   }, []);
 
-  // M15 — stable reference via useCallback prevents stale closure in SSE effect
+  // M15 — stable reference via useCallback prevents stale closure in SSE effect.
+  // Sprint H R2 D3 — seq-paired. Rapid-fire SSE events on bulk edits
+  // would otherwise let the oldest response clobber newer state.
   const loadVault = useCallback(async (): Promise<void> => {
+    const seq = nextVaultSeq();
     try {
       const data = await fetchVault();
-      setVault(data);
+      setVault(data, seq);
       setError(null);
     } catch (err: unknown) {
       setError(String(err));

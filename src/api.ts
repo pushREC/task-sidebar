@@ -271,6 +271,22 @@ export function editProjectFieldApi(args: {
 
 // ─── Read API ─────────────────────────────────────────────────────────────
 
+/**
+ * Sprint H R2 D3 — monotonic sequence counter for fetchVault response
+ * ordering. Callers that issue concurrent fetches (e.g. delete + immediate
+ * restore, user action + SSE refresh) pair each fetchVault call with a
+ * nextVaultSeq() token before awaiting. The store's setVault(vault, seq)
+ * drops any response whose seq is older than the one already applied,
+ * preventing stale vault data from overwriting newer state.
+ *
+ * Module-local state is fine: per-tab isolation matches the existing
+ * per-tab store model (Zustand stores are per-tab; no cross-tab sync).
+ */
+let fetchVaultSeq = 0;
+export function nextVaultSeq(): number {
+  return ++fetchVaultSeq;
+}
+
 export async function fetchVault(): Promise<VaultResponse> {
   const response = await fetch("/api/vault", { signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`/api/vault ${response.status}`);

@@ -7,6 +7,7 @@ import {
   deleteEntityTaskApi,
   deleteInlineTaskApi,
   fetchVault,
+  nextVaultSeq,
   promoteTaskApi,
   restoreTombstoneApi,
   toggleTaskApi,
@@ -69,9 +70,13 @@ export function BulkBar({ projects }: BulkBarProps) {
   if (selectedEntries.length === 0) return null;
 
   async function refreshVault() {
+    // Sprint H R2 D3 — pair fetch with monotonic seq. Bulk actions can
+    // trigger rapid-fire refresh calls (per-task restore on undo); the
+    // seq ensures older responses don't overwrite newer state.
+    const seq = nextVaultSeq();
     try {
       const v = await fetchVault();
-      useSidebarStore.getState().setVault(v);
+      useSidebarStore.getState().setVault(v, seq);
     } catch { /* SSE will catch up */ }
   }
 

@@ -13,7 +13,7 @@ import { TaskDetailPanel } from "./TaskDetailPanel.js";
 import { relativeDue, parseISODate, diffDays } from "../lib/format.js";
 import { DuePopover } from "./DuePopover.js";
 import { PriorityPopover } from "./PriorityPopover.js";
-import { fetchVault } from "../api.js";
+import { fetchVault, nextVaultSeq } from "../api.js";
 
 interface TaskRowProps {
   task: Task;
@@ -195,9 +195,13 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   const APPLY_TIMEOUT_MS = 30_000;
 
   async function refetchVault(): Promise<void> {
+    // Sprint H R2 D3 — pair with monotonic seq. Field-edit failures
+    // and concurrent SSE can fire refetches back-to-back; seq ensures
+    // older responses don't overwrite newer state.
+    const seq = nextVaultSeq();
     try {
       const v = await fetchVault();
-      useSidebarStore.getState().setVault(v);
+      useSidebarStore.getState().setVault(v, seq);
     } catch {
       // SSE will catch up; nothing actionable from the client.
     }
