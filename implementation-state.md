@@ -75,10 +75,10 @@
     - Codex MEDIUM R2-HMR-SEQ-RESET — fetchVaultSeq seeded from globalThis.__maxAppliedVaultSeq + mirrored across modules
     - Opportunistically applied Gemini ERROR-TOOLTIP-OVERFLOW LOW (white-space normal + line-height) in same CSS edit as ERROR-DOT-KBD-TOOLTIP
   - D5 + D6 doc-only comments landed in commit 6c9f5d3 (Partial-undo semantics on handleBulkDelete; PendingUndo replacement semantics on setPendingUndo)
-  - Deferred LOW (to PLAN-II-LOG.md R2 entry):
-    - Gemini ERROR-DOT-FALLBACK-COPY (wording polish)
-    - Gemini TRUNCATION-SURROGATE-BREAK (emoji-at-37-byte-boundary slice)
-    - Codex R2-INLINE-RESTORE-ENOENT (existsSync/readFile TOCTOU in inline-restore path)
+  - Deferred LOW at R2 close (updated after supremacy audit iter-2 R-F1):
+    - Gemini ERROR-DOT-FALLBACK-COPY (wording polish — Sprint J candidate)
+    - Gemini TRUNCATION-SURROGATE-BREAK (emoji-at-37-byte-boundary slice — Sprint J candidate)
+    - ~~Codex R2-INLINE-RESTORE-ENOENT~~ RESCUED in supremacy-audit F1 (commit `fd5a77b`). `readFile(targetAbs)` now catches ENOENT → safetyError(404). See `1-Projects/vault-sidebar/PLAN-II-LOG.md` supremacy-audit entry for details.
   - Exit gate: tsc 0, verify.sh 39/39 on fresh server, AI-tells clean, stray-#fff clean (see `/tmp/plan-ii-r2-exit-gate.txt`)
 - H.4.4 Convergence Round 3 — SKIPPED
   - Per §R2.4 decision 6: R3 skipped if R2 critics return zero C/H/M post-fix
@@ -132,7 +132,7 @@ All tasks NOT STARTED. Deferred to next session.
 - Critic-fix commits: c4144f0 (Codex HIGH tombstone-mtime), eb17488 (2 HIGH + 4 MEDIUM Gemini + 1 MEDIUM Codex + opportunistic 1 LOW Gemini)
 - Doc-only commit: 6c9f5d3 (D5 + D6)
 - Total: 8 C/H/M fixed (of 8 non-LOW findings) + 1 LOW opportunistically fixed
-- Deferred LOW: 3 (Gemini ERROR-DOT-FALLBACK-COPY, Gemini TRUNCATION-SURROGATE-BREAK, Codex R2-INLINE-RESTORE-ENOENT)
+- Deferred LOW at R2 close: 3 (see Convergence Round Log for update; R2-INLINE-RESTORE-ENOENT later rescued by supremacy-audit F1)
 - R3 SKIPPED per §R2.4 decision 6 (zero C/H/M post-fix, no regressions)
 - tsc 0, verify.sh 39/39 on fresh server, AI-tells clean — Sprint H R2 complete + ship-ready
 
