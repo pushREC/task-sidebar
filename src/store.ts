@@ -60,6 +60,11 @@ interface SidebarState {
   // ── Live vault data (NOT persisted) ─────────────────────────────────────
   vault: VaultResponse | null;
   errorTaskIds: Set<string>;
+  /** Sprint H R2 D2 — per-task error message for hover-tooltip specificity.
+   *  Populated via markTaskError(taskId, message?). Keyed by taskId; only
+   *  populated when the caller supplies a message. TaskRow reads from this
+   *  Map and falls back to the generic "Write failed" string when unset. */
+  taskErrorMessages: Map<string, string>;
   /** Legacy single-selection pointer for backward-compat with j/k nav.
    *  Sprint G adds `selectedTaskIds` as the authoritative multi-select.
    *  When one item is in selectedTaskIds, both reflect the same id. */
@@ -90,7 +95,8 @@ interface SidebarState {
   // ── Actions ─────────────────────────────────────────────────────────────
   setVault: (vault: VaultResponse) => void;
   optimisticToggle: (taskId: string) => void;
-  markTaskError: (taskId: string) => void;
+  /** Sprint H R2 D2 — optional `message` argument routes to taskErrorMessages. */
+  markTaskError: (taskId: string, message?: string) => void;
   clearTaskError: (taskId: string) => void;
   setSelectedTaskId: (id: string | null) => void;
   // Sprint G actions
@@ -214,6 +220,7 @@ export const useSidebarStore = create<SidebarState>()(
       // ── Initial state ─────────────────────────────────────────────────────
       vault: null,
       errorTaskIds: new Set(),
+      taskErrorMessages: new Map(),
       selectedTaskId: null,
       selectedTaskIds: new Set(),
       pendingUndo: null,
@@ -235,7 +242,7 @@ export const useSidebarStore = create<SidebarState>()(
         // inherited that line number. Clear on every vault update; it's
         // transient state (2s auto-clear anyway) and clearing avoids
         // the subtle mis-attach.
-        set({ vault, errorTaskIds: new Set() });
+        set({ vault, errorTaskIds: new Set(), taskErrorMessages: new Map() });
       },
 
       optimisticToggle(taskId) {
@@ -270,17 +277,30 @@ export const useSidebarStore = create<SidebarState>()(
         });
       },
 
-      markTaskError(taskId) {
-        set((state) => ({
-          errorTaskIds: new Set([...state.errorTaskIds, taskId]),
-        }));
+      markTaskError(taskId, message) {
+        set((state) => {
+          const nextIds = new Set([...state.errorTaskIds, taskId]);
+          if (message === undefined) {
+            return { errorTaskIds: nextIds };
+          }
+          const nextMsgs = new Map(state.taskErrorMessages);
+          nextMsgs.set(taskId, message);
+          return { errorTaskIds: nextIds, taskErrorMessages: nextMsgs };
+        });
       },
 
       clearTaskError(taskId) {
         set((state) => {
-          const next = new Set(state.errorTaskIds);
-          next.delete(taskId);
-          return { errorTaskIds: next };
+          const nextIds = new Set(state.errorTaskIds);
+          nextIds.delete(taskId);
+          const nextMsgs = state.taskErrorMessages.has(taskId)
+            ? (() => {
+                const m = new Map(state.taskErrorMessages);
+                m.delete(taskId);
+                return m;
+              })()
+            : state.taskErrorMessages;
+          return { errorTaskIds: nextIds, taskErrorMessages: nextMsgs };
         });
       },
 

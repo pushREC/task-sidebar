@@ -56,6 +56,10 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   const markTaskError = useSidebarStore((s) => s.markTaskError);
   const clearTaskError = useSidebarStore((s) => s.clearTaskError);
   const errorTaskIds = useSidebarStore((s) => s.errorTaskIds);
+  // Sprint H R2 D2 — per-task error message for specific hover-tooltip text
+  // (e.g. 409 mtime-mismatch surfaces "File was edited elsewhere" not the
+  // generic "Write failed"). Undefined → fall back to generic below.
+  const taskErrorMessage = useSidebarStore((s) => s.taskErrorMessages.get(task.id));
   const selectedTaskId = useSidebarStore((s) => s.selectedTaskId);
   const setSelectedTaskId = useSidebarStore((s) => s.setSelectedTaskId);
   const selectedTaskIds = useSidebarStore((s) => s.selectedTaskIds);
@@ -132,18 +136,37 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     toggleTaskApi({ tasksPath, line: taskLine, done: newDone }).then((result) => {
       if (!result.ok) {
         optimisticToggle(task.id);
-        showError();
+        showError(errorMessageFor(result.error));
       }
     });
   }
 
-  function showError() {
-    markTaskError(task.id);
+  // Sprint H R2 D2 — optional `message` for tooltip specificity. Maps 409
+  // mtime-mismatch to "File was edited elsewhere", timeouts to "Request
+  // timed out", etc. Omit argument → generic fallback in the DOM attr.
+  function showError(message?: string) {
+    markTaskError(task.id, message);
     if (errorTimerRef.current !== null) clearTimeout(errorTimerRef.current);
     errorTimerRef.current = setTimeout(() => {
       clearTaskError(task.id);
       errorTimerRef.current = null;
     }, ERROR_DOT_DURATION_MS);
+  }
+
+  // Sprint H R2 D2 — ApiResult<T> → tooltip message mapping. Called when a
+  // writer returns {ok:false, error}. Keeps specific copy in one place.
+  function errorMessageFor(errorKey: string): string {
+    if (errorKey === "mtime-mismatch") {
+      return "File was edited elsewhere — refresh and retry.";
+    }
+    if (errorKey === "not-found" || errorKey === "task-not-found") {
+      return "Task no longer exists.";
+    }
+    if (errorKey.includes("AbortError") || errorKey.includes("TimeoutError")) {
+      return "Request timed out — check network and retry.";
+    }
+    // Fallback — let the generic DOM attr handle it.
+    return "Write failed — check server response.";
   }
 
   // ── Sprint C: inline field edit (due / impact / urgency) ─────────────────
@@ -193,7 +216,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     const timeoutId = setTimeout(() => {
       applyingRef.current = false;
       setIsApplying(false);
-      showError();
+      showError("Request timed out — check network and retry.");
     }, APPLY_TIMEOUT_MS);
 
     try {
@@ -210,7 +233,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
           value: first.value,
         });
         if (!r.ok) {
-          showError();
+          showError(errorMessageFor(r.error));
           await refetchVault();
           return;
         }
@@ -221,7 +244,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
           const e = edits[i];
           const r2 = await editTaskFieldApi({ entityPath: newEntityPath, field: e.field, value: e.value });
           if (!r2.ok) {
-            showError();
+            showError(errorMessageFor(r2.error));
             await refetchVault();
             return;
           }
@@ -235,7 +258,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
       for (const e of edits) {
         const r = await editTaskFieldApi({ entityPath, field: e.field, value: e.value });
         if (!r.ok) {
-          showError();
+          showError(errorMessageFor(r.error));
           await refetchVault();
           return;
         }
@@ -298,7 +321,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
 
     editTaskApi({ tasksPath, line: taskLine, newText: trimmed }).then((result) => {
       if (!result.ok) {
-        showError();
+        showError(errorMessageFor(result.error));
       }
     });
     setIsEditing(false);
@@ -320,7 +343,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     moveTaskApi({ sourcePath: tasksPath, line: taskLine, targetSlug }).then(
       (result) => {
         if (!result.ok) {
-          showError();
+          showError(errorMessageFor(result.error));
         }
       }
     );
@@ -549,8 +572,8 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
                 <button
                   type="button"
                   className="task-error-dot-button"
-                  aria-label="Write failed. Click to dismiss."
-                  data-error-msg="Write failed — check server response"
+                  aria-label={taskErrorMessage ?? "Write failed. Click to dismiss."}
+                  data-error-msg={taskErrorMessage ?? "Write failed — check server response"}
                   onClick={(e) => {
                     e.stopPropagation();
                     clearTaskError(task.id);
