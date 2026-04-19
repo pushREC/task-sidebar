@@ -13,7 +13,10 @@ import { writeFileAtomic, writeFileExclusive } from "./atomic.js";
  * inline deletes) the line number + the checkbox text.
  *
  * A sweeper (setInterval in server/index.ts) unlinks tombstones older
- * than TOMBSTONE_TTL_MS (5s window — matches UndoToast 5s lifetime).
+ * than TOMBSTONE_TTL_MS (8s — UndoToast 5s client window + 3s network-RTT
+ * margin. Widened from 5500ms in Sprint H R2 D4 per Gemini R1 LOW finding
+ * "TTL-TIGHTNESS": 500ms margin was vulnerable to slow-connection latency
+ * letting the sweeper beat a user's restore click).
  * A startup cleanup drops orphans older than ORPHAN_TTL_MS (1h) so
  * a server crash mid-window doesn't leak stale tombstones indefinitely.
  *
@@ -33,7 +36,7 @@ import { writeFileAtomic, writeFileExclusive } from "./atomic.js";
 
 export const VAULT_ROOT = "/Users/robertzinke/pushrec-vault";
 export const TOMBSTONE_DIR = `${VAULT_ROOT}/.vault-sidebar-tombstones`;
-export const TOMBSTONE_TTL_MS = 5500; // slight slack past UndoToast 5s window
+export const TOMBSTONE_TTL_MS = 8000; // UndoToast 5s + 3s network-RTT margin (R2 D4)
 export const ORPHAN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 /**

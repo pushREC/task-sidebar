@@ -107,9 +107,11 @@ async function start(): Promise<void> {
   });
 
   // Sprint H.3.5 — tombstone sweeper. Runs every TOMBSTONE_TTL_MS to
-  // delete tombstones older than the TTL (5.5s default). unref() so the
-  // interval doesn't keep Node alive at shutdown. Silent-error per run
-  // (logs via the module's own stderr path on failures).
+  // delete tombstones older than the TTL (8s default, widened from 5.5s
+  // in R2 D4 per Gemini R1 TTL-TIGHTNESS finding — UndoToast 5s +
+  // 3s network-RTT margin). unref() so the interval doesn't keep Node
+  // alive at shutdown. Silent-error per run (logs via the module's own
+  // stderr path on failures).
   const tombstoneSweeper = setInterval(() => {
     void sweepTombstones().catch((err) => {
       process.stderr.write(`[tombstone] sweep error: ${err}\n`);
