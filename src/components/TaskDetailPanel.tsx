@@ -839,30 +839,47 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
       });
     }
 
-    if (isEntityTask && task.entityPath) {
-      const r = await deleteEntityTaskApi({ entityPath: task.entityPath });
-      if (r.ok) {
-        queueRestoreUndo(r.data.tombstoneId);
-        await collapseAfterRefetch();
-      } else {
-        setDeleteError(r.error);
-        setIsDeleting(false);   // R3 — unlock on delete failure too
+    // Sprint H R2 supremacy-audit fix (Agent 3 P6 HIGH) — wrap delete
+    // flow in try/catch so any thrown error (fetch timeout, network
+    // failure, JSON parse error) unlocks isDeleting. Without this, a
+    // thrown error propagates into React's async-event black hole and
+    // isDeleting stays true forever → panel becomes screen-reader-
+    // invisible (aria-hidden) + user-interaction-locked indefinitely.
+    // Return paths via collapseAfterRefetch manage isDeleting themselves
+    // (success → unmount; failure → unlock + show error). The catch here
+    // covers only the delete API throw itself.
+    try {
+      if (isEntityTask && task.entityPath) {
+        const r = await deleteEntityTaskApi({ entityPath: task.entityPath });
+        if (r.ok) {
+          queueRestoreUndo(r.data.tombstoneId);
+          await collapseAfterRefetch();
+        } else {
+          setDeleteError(r.error);
+          setIsDeleting(false);   // R3 — unlock on delete failure too
+        }
+        return;
       }
-      return;
-    }
-    if (isInline && tasksPath && task.line !== undefined) {
-      const r = await deleteInlineTaskApi({
-        tasksPath,
-        line: task.line,
-        expectedAction: task.action,
-      });
-      if (r.ok) {
-        queueRestoreUndo(r.data.tombstoneId);
-        await collapseAfterRefetch();
-      } else {
-        setDeleteError(r.error);
-        setIsDeleting(false);   // R3 — unlock on delete failure too
+      if (isInline && tasksPath && task.line !== undefined) {
+        const r = await deleteInlineTaskApi({
+          tasksPath,
+          line: task.line,
+          expectedAction: task.action,
+        });
+        if (r.ok) {
+          queueRestoreUndo(r.data.tombstoneId);
+          await collapseAfterRefetch();
+        } else {
+          setDeleteError(r.error);
+          setIsDeleting(false);   // R3 — unlock on delete failure too
+        }
       }
+    } catch (err) {
+      // Delete API threw (timeout, network, parse error). Unlock the
+      // panel + surface a visible message so the user can retry.
+      const msg = err instanceof Error ? err.message : "Delete request failed";
+      setDeleteError(`Delete failed: ${msg}`);
+      setIsDeleting(false);
     }
   }
 

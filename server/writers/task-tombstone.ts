@@ -285,7 +285,23 @@ export async function restoreFromTombstone(tombstoneId: string): Promise<Restore
       throw err;
     }
   }
-  const raw = await readFile(targetAbs, "utf8");
+  // Sprint H R2 supremacy-audit fix (Codex R2-INLINE-RESTORE-ENOENT) —
+  // existsSync → readFile is a TOCTOU gap; if tasks.md is deleted by a
+  // concurrent process in the window, readFile throws raw ENOENT and
+  // the error surfaces as 500 instead of the expected 404. Catch ENOENT
+  // and normalize, mirroring the @FILE-fallback handler above (~line 282).
+  let raw: string;
+  try {
+    raw = await readFile(targetAbs, "utf8");
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "ENOENT") {
+      throw safetyError(
+        `tasks.md deleted concurrently with inline restore: ${decoded.originalPath}`,
+        404,
+      );
+    }
+    throw err;
+  }
   const lines = raw.split("\n");
   const insertIdx = Math.min(Math.max(0, decoded.line - 1), lines.length);
   lines.splice(insertIdx, 0, text);

@@ -65,7 +65,7 @@
     - Gemini R2: 9 findings (2 HIGH, 4 MEDIUM, 3 LOW)
     - Codex R2: 3 findings (1 HIGH, 1 MEDIUM, 1 LOW)
   - Applied in commits c4144f0 + eb17488:
-    - Codex HIGH R2-TOMBSTONE-MTIME — sweep expiry now uses filename timestamp, not stat.mtimeMs (fs.rename preserves source mtime; entity tasks edited >8s ago were immediately swept)
+    - Codex HIGH R2-TOMBSTONE-MTIME — sweep expiry now uses filename timestamp (primary), with fs.mtime fallback for unparseable filenames. fs.rename preserves source mtime on POSIX, so entity tasks edited >8s ago were immediately swept under the old stat.mtimeMs-only logic.
     - Gemini HIGH UNDO-TOAST-TERMINAL-BTNS — PendingUndo.terminal?:boolean omits Undo button + ⌘Z binding on terminal toasts
     - Gemini HIGH BULK-BAR-FOCUS-LOSS — restoreFocusBeforeUnmount() restores focus to .quick-add-input before clearSelection
     - Gemini MEDIUM ERROR-DOT-KBD-TOOLTIP — :focus-visible tooltip variant (keyboard users see specific error text)
