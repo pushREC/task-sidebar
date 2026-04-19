@@ -299,7 +299,19 @@ export async function restoreFromTombstone(tombstoneId: string): Promise<Restore
 
 // ── Sweeper + orphan cleanup ───────────────────────────────────────────────
 
-/** Delete any tombstone with mtime older than maxAgeMs. Returns count. */
+/** Delete any tombstone older than maxAgeMs (based on the timestamp
+ *  encoded in the filename, NOT fs mtime). Returns count.
+ *
+ *  Sprint H R2 critic-fix (Codex R2-TOMBSTONE-MTIME HIGH) — fs.rename
+ *  preserves the source file's mtime on POSIX, so for an entity task
+ *  edited hours ago, the resulting tombstone's stat.mtimeMs is
+ *  hours-old. That made the old stat.mtimeMs-based sweeper prune
+ *  tombstones immediately after creation (mtime check passes trivially),
+ *  collapsing the R2 D4 TTL widening to ~0s for any stale-edited
+ *  entity task. Fix: parse the ISO-timestamp prefix from the tombstone
+ *  filename; that value is set to Date.now() at moveToTombstone() time
+ *  and reflects true tombstone-creation time. Fallback to stat.mtimeMs
+ *  only for unparseable names (shouldn't happen, but fail safe). */
 export async function sweepTombstones(maxAgeMs: number = TOMBSTONE_TTL_MS): Promise<number> {
   if (!existsSync(TOMBSTONE_DIR)) return 0;
   const names = await readdir(TOMBSTONE_DIR);
@@ -308,8 +320,18 @@ export async function sweepTombstones(maxAgeMs: number = TOMBSTONE_TTL_MS): Prom
   for (const name of names) {
     const full = `${TOMBSTONE_DIR}/${name}`;
     try {
-      const st = await stat(full);
-      if (now - st.mtimeMs > maxAgeMs) {
+      const decoded = decodeTombstoneName(name);
+      let createdAt: number;
+      if (decoded) {
+        createdAt = decoded.timestamp;
+      } else {
+        // Unparseable filename — fall back to filesystem mtime as a
+        // conservative safety net. Unknown-shape tombstones shouldn't
+        // linger indefinitely; use maxAgeMs against stat anyway.
+        const st = await stat(full);
+        createdAt = st.mtimeMs;
+      }
+      if (now - createdAt > maxAgeMs) {
         await unlink(full);
         swept++;
       }
