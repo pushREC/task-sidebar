@@ -387,6 +387,14 @@ export const useSidebarStore = create<SidebarState>()(
         set({ selectedTaskIds: new Set(), selectedTaskId: null });
       },
 
+      // PendingUndo replacement semantics (Plan II Sprint H R2 D6 decision,
+      // 2026-04-19):
+      //   setPendingUndo unconditionally replaces any existing pendingUndo.
+      //   Example: user deletes A (pendingUndo = A), then deletes B before
+      //   5s elapses (pendingUndo = B, A's tombstone sweeps after TTL).
+      //   Only B is undoable via ⌘Z. Accepted trade-off vs queue semantics
+      //   (multi-button toast + complex UI). Matches Mac-Finder ⌘Z =
+      //   last-action mental model. Reverse if user reports surprise.
       setPendingUndo(undo) {
         set({ pendingUndo: undo });
       },

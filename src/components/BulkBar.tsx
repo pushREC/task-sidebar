@@ -268,8 +268,19 @@ export function BulkBar({ projects }: BulkBarProps) {
   }
 
   // Bulk Delete — entity tasks unlinked, inline tasks line-removed.
-  // Delete is NOT undoable (we can't restore a deleted file). The toast
-  // shows but clicking Undo is a no-op; clicking Clear dismisses it.
+  // Sprint H.3.x made delete real-undoable via tombstones; bulk still
+  // iterates sequentially and collects tombstoneIds for Undo.
+  //
+  // Partial-undo semantics (Plan II Sprint H R2 D5 decision, 2026-04-19):
+  //   handleBulkDelete iterates deletions sequentially. If the user
+  //   triggers ⌘Z mid-loop, pendingUndo's revert closure only restores
+  //   tasks already tombstoned — not tasks still in-flight. This is
+  //   an accepted trade-off vs a two-pass (queue-all → atomic-commit)
+  //   refactor which would add ~2h work + regression risk. User-visible
+  //   behavior: "Restored N/M" toast communicates partial state.
+  //   Matches Mac-Finder ⌘Z = last-completed-action mental model.
+  //   If this becomes a real pain point, the refactor lands in Sprint I
+  //   as part of the bulk-move work (same loop shape).
   async function handleBulkDelete() {
     if (isProcessing) return;
     const entries = selectedEntries;
