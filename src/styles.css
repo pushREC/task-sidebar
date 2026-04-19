@@ -324,7 +324,12 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
   outline: 1.5px solid var(--accent);
   outline-offset: 1px;
 }
-.task-error-dot-button:hover::after {
+/* Sprint H R2 critic-fix (Gemini ERROR-DOT-KBD-TOOLTIP MEDIUM) — the
+   tooltip is now also visible on :focus-visible so keyboard users who
+   Tab to the error-dot button can read the specific message, not just
+   hear the aria-label. Mirror the :hover styling exactly. */
+.task-error-dot-button:hover::after,
+.task-error-dot-button:focus-visible::after {
   content: attr(data-error-msg);
   position: absolute;
   top: calc(100% + 4px);
@@ -337,7 +342,10 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
   padding: 4px 8px;
   font-size: 11px;
   font-family: var(--font-sans);
-  white-space: nowrap;
+  /* R2 critic-fix also (Gemini ERROR-TOOLTIP-OVERFLOW LOW): allow wrap
+     so "File was edited elsewhere — refresh and retry." doesn't clip. */
+  white-space: normal;
+  line-height: 1.35;
   max-width: 240px;
   pointer-events: none;
   z-index: 3;

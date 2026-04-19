@@ -80,6 +80,29 @@ export function BulkBar({ projects }: BulkBarProps) {
     } catch { /* SSE will catch up */ }
   }
 
+  /**
+   * Sprint H R2 critic-fix (Gemini BULK-BAR-FOCUS-LOSS HIGH) — when a
+   * bulk action succeeds, clearSelection() unmounts the BulkBar. If
+   * focus was on a bar button (Done / Move / Cancel / Delete / Clear),
+   * it silently drops to <body>, leaving keyboard users stranded.
+   * Restore to a stable element: prefer QuickAdd input (always present,
+   * below the bar); fallback to first agenda row; last resort nothing.
+   */
+  function restoreFocusBeforeUnmount(): void {
+    const active = document.activeElement as HTMLElement | null;
+    const activeInBar = active?.closest(".bulk-bar") !== null;
+    if (!activeInBar) return;
+    const quickAddInput = document.querySelector<HTMLInputElement>(
+      ".quick-add-input",
+    );
+    if (quickAddInput) {
+      quickAddInput.focus();
+      return;
+    }
+    const firstRow = document.querySelector<HTMLElement>("[data-task-row]");
+    if (firstRow) firstRow.focus();
+  }
+
   // Bulk Done — apply to every selected task. Inline tasks go through
   // /api/tasks/toggle; entity tasks go through /api/tasks/status-edit
   // which queues the delayed reconcile per path.
@@ -88,7 +111,8 @@ export function BulkBar({ projects }: BulkBarProps) {
     const entries = selectedEntries;
     const previouslyOpen = entries.filter((e) => !e.task.done);
     if (previouslyOpen.length === 0) {
-      clearSelection();
+      restoreFocusBeforeUnmount();
+    clearSelection();
       return;
     }
 
@@ -165,6 +189,7 @@ export function BulkBar({ projects }: BulkBarProps) {
 
     setPendingUndo(undo);
     await refreshVault();
+    restoreFocusBeforeUnmount();
     clearSelection();
     } finally {
       setProgress(null);
@@ -235,6 +260,7 @@ export function BulkBar({ projects }: BulkBarProps) {
       },
     });
     await refreshVault();
+    restoreFocusBeforeUnmount();
     clearSelection();
     } finally {
       setProgress(null);
@@ -290,6 +316,7 @@ export function BulkBar({ projects }: BulkBarProps) {
     setFailures(localFailures);
 
     await refreshVault();
+    restoreFocusBeforeUnmount();
     clearSelection();
 
     // Sprint H.3.7 — real undo. Post restoreTombstoneApi for each
@@ -318,6 +345,8 @@ export function BulkBar({ projects }: BulkBarProps) {
           if (restored < tombstoneIds.length) {
             // Partial restore: show an info toast next — use setPendingUndo
             // with a terminal-like label. Keep it subtle.
+            // R2 critic-fix (Gemini UNDO-TOAST-TERMINAL-BTNS) —
+            // terminal:true causes UndoToast to omit the Undo button.
             setPendingUndo({
               action: "delete",
               taskIds: [],
@@ -325,6 +354,7 @@ export function BulkBar({ projects }: BulkBarProps) {
               label: `Restored ${restored}/${tombstoneIds.length} (others swept)`,
               undoneAt: Date.now(),
               revert: async () => { /* terminal feedback */ },
+              terminal: true,
             });
           }
         },

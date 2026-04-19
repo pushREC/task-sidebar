@@ -81,13 +81,23 @@ export function UndoToast() {
 
   // Expose a global undo function for ⌘Z. Sprint H.3.8 — delete variant
   // now has a real revert (tombstone restore), so ⌘Z IS bound for it.
+  // Sprint H R2 critic-fix: skip binding entirely when terminal (no-op
+  // revert would mislead); also skip on <select> focus (Gemini
+  // UNDO-CMDZ-SELECT-GUARD MEDIUM — native select Undo semantics should
+  // not be hijacked by our global handler).
   useEffect(() => {
     if (!pendingUndo) return;
+    if (pendingUndo.terminal === true) return; // no ⌘Z for terminal toasts
     async function handleCmdZ(e: KeyboardEvent) {
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         const active = document.activeElement as HTMLElement | null;
         const tag = active?.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || active?.isContentEditable) {
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          active?.isContentEditable
+        ) {
           return;
         }
         e.preventDefault();
@@ -108,25 +118,35 @@ export function UndoToast() {
   // ~5s and restoreFromTombstone is real. We render Undo (primary) AND
   // a small X (secondary dismiss) so the user can also opt to suppress
   // the notification without firing revert.
+  //
+  // Sprint H R2 critic-fix (Gemini UNDO-TOAST-TERMINAL-BTNS HIGH) — if
+  // the caller flags this pending as `terminal: true` (e.g. "Restore
+  // failed" from BulkBar revert), omit the Undo button because the
+  // revert is a no-op and clicking it would mislead the user. X dismiss
+  // stays; aria-live="assertive" on terminal so the failure is
+  // announced immediately.
+  const isTerminal = pendingUndo.terminal === true;
   const node = (
     <div
-      className="undo-toast"
+      className={isTerminal ? "undo-toast undo-toast--terminal" : "undo-toast"}
       role="status"
-      aria-live="polite"
+      aria-live={isTerminal ? "assertive" : "polite"}
       aria-atomic="true"
     >
       <span className="undo-toast__label">{pendingUndo.label}</span>
-      <button
-        type="button"
-        className="undo-toast__btn press-scale"
-        onClick={() => void handleUndoClick()}
-        disabled={isUndoing}
-        aria-label="Undo last action"
-        title="Undo · ⌘Z"
-      >
-        <RotateCcw size={11} strokeWidth={2} aria-hidden="true" />
-        <span>{isUndoing ? "Undoing…" : "Undo"}</span>
-      </button>
+      {!isTerminal && (
+        <button
+          type="button"
+          className="undo-toast__btn press-scale"
+          onClick={() => void handleUndoClick()}
+          disabled={isUndoing}
+          aria-label="Undo last action"
+          title="Undo · ⌘Z"
+        >
+          <RotateCcw size={11} strokeWidth={2} aria-hidden="true" />
+          <span>{isUndoing ? "Undoing…" : "Undo"}</span>
+        </button>
+      )}
       <button
         type="button"
         className="undo-toast__dismiss press-scale"

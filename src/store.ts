@@ -54,6 +54,11 @@ export interface PendingUndo {
   label: string;
   undoneAt: number;  // Date.now() captured at queue-time
   revert: () => Promise<void>;  // caller-provided reverter
+  /** Sprint H R2 critic-fix (Gemini UNDO-TOAST-TERMINAL-BTNS HIGH).
+   *  When true, the toast is terminal feedback (e.g. "Restore failed")
+   *  and has NO meaningful revert. UndoToast omits the Undo button and
+   *  renders only the X dismiss to prevent misleading the user. */
+  terminal?: boolean;
 }
 
 interface SidebarState {
@@ -260,12 +265,18 @@ export const useSidebarStore = create<SidebarState>()(
             // Silently drop — a newer fetch already applied to store.
             return state;
           }
+          const nextMax = seq !== undefined ? seq : state.maxAppliedVaultSeq;
+          // Sprint H R2 critic-fix (Codex R2-HMR-SEQ-RESET) — mirror the
+          // max onto globalThis so api.ts's nextVaultSeq() can reseed
+          // itself after HMR without a circular module import.
+          (globalThis as unknown as { __maxAppliedVaultSeq?: number })
+            .__maxAppliedVaultSeq = nextMax;
           return {
             ...state,
             vault,
             errorTaskIds: new Set(),
             taskErrorMessages: new Map(),
-            maxAppliedVaultSeq: seq !== undefined ? seq : state.maxAppliedVaultSeq,
+            maxAppliedVaultSeq: nextMax,
           };
         });
       },

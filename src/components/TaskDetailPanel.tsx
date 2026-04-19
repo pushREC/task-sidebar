@@ -681,6 +681,11 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
   // vault refetch so the panel shows fresh frontmatter + body.
   const [mtimeConflict, setMtimeConflict] = useState(false);
   const mtimeConflictTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sprint H R2 critic-fix (Gemini MTIME-BANNER-A11Y-FOCUS MEDIUM) —
+  // ref on the banner so we can pull keyboard focus to the actionable
+  // instruction when the 409 lands. Screen readers get aria-live; keyboard
+  // users get programmatic focus too.
+  const mtimeConflictBannerRef = useRef<HTMLDivElement | null>(null);
 
   const handlePromoted = useCallback(() => {
     setExpandedTaskId(null);
@@ -693,6 +698,13 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
       setMtimeConflict(false);
       mtimeConflictTimerRef.current = null;
     }, 6000);
+    // R2 critic-fix (Gemini MTIME-BANNER-A11Y-FOCUS) — next paint,
+    // pull focus to the banner so keyboard-only users are informed of
+    // the conflict. requestAnimationFrame defers past the render commit
+    // so the ref is populated.
+    requestAnimationFrame(() => {
+      mtimeConflictBannerRef.current?.focus();
+    });
     // Refetch so the panel shows fresh disk state. User's draft text
     // in any open Editable* is PRESERVED (state lives in the child).
     // R2 D3 — pair with monotonic seq so a concurrent restore/delete
@@ -802,6 +814,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
             if (!r.ok) {
               // Restore failed (tombstone swept, target re-occupied, etc.)
               // Emit a terminal-label toast so user sees why.
+              // R2 critic-fix (Gemini UNDO-TOAST-TERMINAL-BTNS) —
+              // terminal:true causes UndoToast to omit the Undo button.
               storeSetPendingUndo({
                 action: "delete",
                 taskIds: [],
@@ -809,6 +823,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
                 label: "Restore failed — tombstone expired or target exists",
                 undoneAt: Date.now(),
                 revert: async () => { /* terminal feedback */ },
+                terminal: true,
               });
             }
           } catch {
@@ -877,6 +892,13 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
       onKeyDown={handleKeyDown}
       role="region"
       aria-label={`Details for: ${task.action}`}
+      // Sprint H R2 critic-fix (Gemini TASK-DETAIL-DEL-OVERLAY-SR MEDIUM) —
+      // while deleting, the underlying panel body DOM is still present
+      // (pointer-events disabled by CSS) but screen readers could still
+      // navigate to interactive children. aria-hidden hides the whole
+      // subtree from AT. The "Deleting…" overlay below has its own
+      // aria-live region so users still get the status announcement.
+      aria-hidden={isDeleting ? true : undefined}
     >
       {/* ── V4B breadcrumb ─────────────────────────────────────────────── */}
       {(hasGoal || hasProjectWikilink || hasTimestamps) && (
@@ -1072,7 +1094,13 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
       )}
 
       {mtimeConflict && (
-        <div className="prop-error-row prop-error-row--conflict" role="status" aria-live="polite">
+        <div
+          ref={mtimeConflictBannerRef}
+          tabIndex={-1}
+          className="prop-error-row prop-error-row--conflict"
+          role="alert"
+          aria-live="assertive"
+        >
           File was edited elsewhere. Row refreshed with latest — re-apply your change to save.
         </div>
       )}

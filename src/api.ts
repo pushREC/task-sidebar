@@ -281,10 +281,30 @@ export function editProjectFieldApi(args: {
  *
  * Module-local state is fine: per-tab isolation matches the existing
  * per-tab store model (Zustand stores are per-tab; no cross-tab sync).
+ *
+ * Sprint H R2 critic-fix (Codex R2-HMR-SEQ-RESET MEDIUM) — Vite HMR
+ * can reload this module (resetting fetchVaultSeq to 0) while leaving
+ * the Zustand store alive with a high maxAppliedVaultSeq. Without a
+ * reseed, post-HMR fetches would silently drop for several ticks
+ * until the counter climbs past the stored max. On module init we
+ * persist the counter on globalThis + seed from the store's current
+ * maxAppliedVaultSeq. Result: monotonic across both HMR and cold
+ * reload.
  */
-let fetchVaultSeq = 0;
+type GlobalWithCounter = typeof globalThis & { __fetchVaultSeq?: number };
+const g = globalThis as GlobalWithCounter;
+let fetchVaultSeq: number = g.__fetchVaultSeq ?? 0;
 export function nextVaultSeq(): number {
-  return ++fetchVaultSeq;
+  // Lazy-seed from the store if the counter is behind the store's max
+  // (defensive — handles HMR where the counter reset but store didn't).
+  // Avoid circular import by reading dynamically via string-keyed global.
+  const storeMax = (globalThis as unknown as {
+    __maxAppliedVaultSeq?: number;
+  }).__maxAppliedVaultSeq ?? 0;
+  if (fetchVaultSeq < storeMax) fetchVaultSeq = storeMax;
+  fetchVaultSeq += 1;
+  g.__fetchVaultSeq = fetchVaultSeq;
+  return fetchVaultSeq;
 }
 
 export async function fetchVault(): Promise<VaultResponse> {
