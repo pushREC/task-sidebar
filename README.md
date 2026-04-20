@@ -7,10 +7,16 @@
 ![verify](https://img.shields.io/badge/verify.sh-37%2F37-3ea372)
 ![reduced-motion](https://img.shields.io/badge/a11y-reduced--motion%20respected-3ea372)
 
+| Agenda tab (default) | Task detail panel |
+|:---:|:---:|
+| ![agenda](docs/screenshots/agenda.png) | ![task detail](docs/screenshots/task-detail.png) |
+| **Projects tab** with health chips | **⌘K command palette** |
+| ![projects](docs/screenshots/projects.png) | ![command palette](docs/screenshots/command-palette.png) |
+
 ## 30-second quickstart
 
 ```bash
-git clone https://github.com/robertzinke/task-sidebar
+git clone https://github.com/pushREC/task-sidebar
 cd task-sidebar
 pnpm install
 pnpm dev

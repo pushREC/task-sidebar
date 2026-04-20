@@ -5,7 +5,7 @@ This is a personal-use project shared as reference inspiration. Contributions ar
 ## Quickstart for contributors
 
 ```bash
-git clone https://github.com/robertzinke/task-sidebar
+git clone https://github.com/pushREC/task-sidebar
 cd task-sidebar
 pnpm install
 pnpm dev              # serves against sample-vault/

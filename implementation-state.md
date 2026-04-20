@@ -38,7 +38,7 @@
 - H.3.9 TaskDetailPanel capture tombstoneId — COMPLETE (commit 0050cff)
 
 ### H.4 Exit + Convergence
-- H.4.1 Phase-H exit-gate verification — COMPLETE (tsc 0, verify.sh 39/39, AI-tell clean, no stray #fff — see `/tmp/plan-ii-h-exit-gate.txt`)
+- H.4.1 Phase-H exit-gate verification — COMPLETE (tsc 0, verify.sh 39/39, AI-tell clean, no stray #fff)
 - H.4.2 Convergence Round 1 (3 parallel critics) — COMPLETE
   - Opus R1: 10 findings (1 CRITICAL, 2 HIGH, 4 MEDIUM, 3 LOW)
   - Gemini R1: 10 findings (1 CRITICAL, 2 HIGH, 3 MEDIUM, 4 LOW)
@@ -79,7 +79,7 @@
     - Gemini ERROR-DOT-FALLBACK-COPY (wording polish — Sprint J candidate)
     - Gemini TRUNCATION-SURROGATE-BREAK (emoji-at-37-byte-boundary slice — Sprint J candidate)
     - ~~Codex R2-INLINE-RESTORE-ENOENT~~ RESCUED in supremacy-audit F1 (commit `fd5a77b`). `readFile(targetAbs)` now catches ENOENT → safetyError(404). See `1-Projects/vault-sidebar/PLAN-II-LOG.md` supremacy-audit entry for details.
-  - Exit gate: tsc 0, verify.sh 39/39 on fresh server, AI-tells clean, stray-#fff clean (see `/tmp/plan-ii-r2-exit-gate.txt`)
+  - Exit gate: tsc 0, verify.sh 39/39 on fresh server, AI-tells clean, stray-#fff clean
 - H.4.4 Convergence Round 3 — SKIPPED
   - Per §R2.4 decision 6: R3 skipped if R2 critics return zero C/H/M post-fix
   - All 8 R2 C/H/M findings fixed in-commit; LOW findings documented not ship-blockers
