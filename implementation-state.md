@@ -85,9 +85,26 @@
   - All 8 R2 C/H/M findings fixed in-commit; LOW findings documented not ship-blockers
   - R3 diff-against-R2-HEAD regression sweep is optional; none of the R2 fixes introduced regressions (verified via tsc + verify.sh + AI-tells post each commit)
 
+## Phase 0 — Daily-Use Ergonomics + launchd auto-start (2026-04-20)
+
+Post-sanitization + post-supremacy-audit ergonomics work. Enables "always-available sidebar at 127.0.0.1:5174 against real vault" without per-session manual startup.
+
+- P0.T1 — Write `/Users/robertzinke/.task-sidebar-env` — COMPLETE (3 exports: VAULT_ROOT, PRIORITY_SCRIPT_PATH, RECONCILE_SCRIPT_PATH)
+- P0.T2 — Write launchd plist at `~/Library/LaunchAgents/com.robertzinke.task-sidebar.plist` — COMPLETE (RunAtLoad=true, KeepAlive=true, ThrottleInterval=10, Interactive ProcessType, logs to `/tmp/task-sidebar.log`)
+- P0.T3 — `launchctl load -w` + verify — COMPLETE
+  - Agent loaded as PID captured at load time
+  - Server responds HTTP 200 at 127.0.0.1:5174
+  - `/api/vault` returns 49 projects with `vault-sidebar` slug present, no sample-vault `demo-app` leakage → real-vault target confirmed
+  - `/tmp/task-sidebar.log` shows clean `tsx server/index.ts` boot, no errors
+- P0.T4 — Plan file reconciliation — PENDING (Phase IE language update from "local-only" to "push-to-origin-default"; add Phase 0 + Phase K specs)
+
+Verification gate:
+- tsc: 0 errors
+- verify.sh against real-vault via launchd server: `TOTAL: 37 / 37 passed, 0 failed` (37 is the post-sanitization count; the pre-sanitization "39/39" references in the plan are stale)
+
 ## Phase I — Performance Bedrock
 
-All tasks NOT STARTED. Deferred to next session.
+All tasks NOT STARTED. Scheduled after Phase 0 ships. Spec in `~/.claude/plans/spicy-jumping-pike.md` §7.
 
 ## Phase J — Feel Layer
 
