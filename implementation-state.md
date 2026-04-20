@@ -1,10 +1,11 @@
 # Plan II v2 — Implementation State
 
 **Plan source**: `docs/examples/plan-file-example.md` (see docs/PLANNING-DISCIPLINE.md for the format)
-**Branch**: main (local scoped git repo per Plan I pattern)
+**Branch**: main (single branch, pushed to origin/main at github.com/pushREC/task-sidebar)
 **HEAD at Plan II start**: 2ea75c4
 **Session started**: 2026-04-19
-**HEAD at session checkpoint**: 03dfb8b
+**HEAD at session checkpoint**: 1533a16 (Phase 0 complete — launchd auto-start + daily-use ergonomics; supersedes prior 03dfb8b / a93a621 / 5e1507b / 807671f checkpoints)
+**Verify.sh baseline**: 37/37 passed, 0 failed (against real vault with env overrides OR against bundled sample-vault — same count post-sanitization; prior "39/39" references in the plan file and earlier state snippets are stale — see "Verify.sh count correction" in plan §6.8.4)
 
 ## Phase H — Safety + Recoverability
 
