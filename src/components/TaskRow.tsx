@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Circle, CheckCircle2, Pencil } from "lucide-react";
 import type { Task, Project } from "../api.js";
 import {
@@ -53,21 +54,52 @@ const RANK_PILL_VARIANT: Record<string, string> = {
 export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: TaskRowProps) {
   const taskId = task.id.replace(/[^a-zA-Z0-9-_]/g, "_");
   const nowStamp = now ?? new Date();
-  const optimisticToggle = useSidebarStore((s) => s.optimisticToggle);
-  const markTaskError = useSidebarStore((s) => s.markTaskError);
-  const clearTaskError = useSidebarStore((s) => s.clearTaskError);
-  const errorTaskIds = useSidebarStore((s) => s.errorTaskIds);
+  // Sprint I.3 — collapse 11 of 12 individual `useSidebarStore(s => s.X)`
+  // selectors into ONE `useShallow` call. Per-selector overhead drops
+  // 11× → 1× per store update. Shallow-equality on the returned tuple
+  // means re-render only when one of the 11 fields changes identity
+  // (functions are stable; primitives compare by value; Sets recreated
+  // on mutation correctly invalidate).
+  //
+  // B2 preempt (HANDOFF §5) — `taskErrorMessages` Map MUST stay in a
+  // SEPARATE subscription outside the shallow tuple. Every `markTaskError`
+  // call creates a new Map instance; if the Map were inside the tuple,
+  // shallow-compare would fail trivially and every row would re-render
+  // on any error change — a perf regression worse than the pre-I.3
+  // baseline. `.get(task.id)` returns a primitive string (or undefined)
+  // which is per-row shallow-stable.
+  const {
+    optimisticToggle,
+    markTaskError,
+    clearTaskError,
+    errorTaskIds,
+    selectedTaskId,
+    setSelectedTaskId,
+    selectedTaskIds,
+    addSelection,
+    toggleSelection,
+    expandedTaskId,
+    setExpandedTaskId,
+  } = useSidebarStore(
+    useShallow((s) => ({
+      optimisticToggle: s.optimisticToggle,
+      markTaskError: s.markTaskError,
+      clearTaskError: s.clearTaskError,
+      errorTaskIds: s.errorTaskIds,
+      selectedTaskId: s.selectedTaskId,
+      setSelectedTaskId: s.setSelectedTaskId,
+      selectedTaskIds: s.selectedTaskIds,
+      addSelection: s.addSelection,
+      toggleSelection: s.toggleSelection,
+      expandedTaskId: s.expandedTaskId,
+      setExpandedTaskId: s.setExpandedTaskId,
+    })),
+  );
   // Sprint H R2 D2 — per-task error message for specific hover-tooltip text
   // (e.g. 409 mtime-mismatch surfaces "File was edited elsewhere" not the
   // generic "Write failed"). Undefined → fall back to generic below.
+  // B2 preempt — kept SEPARATE from the useShallow tuple above.
   const taskErrorMessage = useSidebarStore((s) => s.taskErrorMessages.get(task.id));
-  const selectedTaskId = useSidebarStore((s) => s.selectedTaskId);
-  const setSelectedTaskId = useSidebarStore((s) => s.setSelectedTaskId);
-  const selectedTaskIds = useSidebarStore((s) => s.selectedTaskIds);
-  const addSelection = useSidebarStore((s) => s.addSelection);
-  const toggleSelection = useSidebarStore((s) => s.toggleSelection);
-  const expandedTaskId = useSidebarStore((s) => s.expandedTaskId);
-  const setExpandedTaskId = useSidebarStore((s) => s.setExpandedTaskId);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(task.action);
