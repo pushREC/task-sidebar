@@ -83,18 +83,18 @@ export function relativeDue(iso: string | undefined, now: Date = new Date()): st
   if (d < 0) return `−${Math.abs(d)}d`;          // Unicode minus (U+2212) for typographic correctness
   if (d === 0) return "today";
   if (d === 1) return "+1d";
-  if (d <= 6) return due.toLocaleDateString("en-US", { weekday: "short" }); // Mon / Tue / …
+  if (d <= 6) return due.toLocaleDateString(undefined, { weekday: "short" }); // Mon / Tue / …
   if (d <= 60) return `+${d}d`;
   // O-3 — include 2-digit year for dates >365 days away to disambiguate
   // "Sep 1 (which year?)". Same-year far-dates still show "Sep 1".
   if (d > 365) {
-    return due.toLocaleDateString("en-US", {
+    return due.toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
       year: "2-digit",
     });
   }
-  return due.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return due.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /**

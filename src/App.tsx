@@ -24,7 +24,7 @@ type Tab = "agenda" | "projects";
 // header would show yesterday's date. Helper that produces the string from
 // a given Date; the component memoizes on epochDay so rollover re-renders.
 function formatDateLabel(d: Date): string {
-  return d.toLocaleDateString("en-US", {
+  return d.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
