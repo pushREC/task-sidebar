@@ -202,6 +202,14 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
   padding: 8px 16px;
   cursor: pointer;
   position: relative;
+  /* Sprint I.2.3 — content-visibility: auto defers layout + paint for
+     off-screen rows. Browser skips expensive work until row enters
+     viewport. Pairs with I.2.1 lazy-mount (unmounted rows aren't in
+     React tree at all) to maximize perf under 2k+ tasks. contain-
+     intrinsic-size reserves a placeholder 40px height so scroll
+     behavior + scrollbar sizing stay correct before paint. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
 }
 .task-row--indent { padding-left: 32px; }
 .task-row + .task-row::before,
