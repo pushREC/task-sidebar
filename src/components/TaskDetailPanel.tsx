@@ -869,7 +869,7 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
         }
         return;
       }
-      if (isInline && tasksPath && task.line !== undefined) {
+      if (tasksPath && isInlineTask(task)) {
         const r = await deleteInlineTaskApi({
           tasksPath,
           line: task.line,

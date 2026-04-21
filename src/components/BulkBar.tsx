@@ -7,6 +7,7 @@ import {
   deleteEntityTaskApi,
   deleteInlineTaskApi,
   fetchVault,
+  isInlineTask,
   nextVaultSeq,
   promoteTaskApi,
   restoreTombstoneApi,
@@ -138,7 +139,7 @@ export function BulkBar({ projects }: BulkBarProps) {
     for (let i = 0; i < previouslyOpen.length; i++) {
       const { task, tasksPath } = previouslyOpen[i];
       try {
-        if (task.source === "inline" && task.line !== undefined) {
+        if (isInlineTask(task)) {
           const r = await toggleTaskApi({ tasksPath, line: task.line, done: true });
           if (!r.ok) localFailures++;
         } else if (task.source === "entity" && task.entityPath) {
@@ -177,7 +178,7 @@ export function BulkBar({ projects }: BulkBarProps) {
         // R1 UX-002 — flip back to the EXACT previous status per task.
         for (const snap of beforeSnapshot) {
           const { task, tasksPath, prevStatus } = snap;
-          if (task.source === "inline" && task.line !== undefined) {
+          if (isInlineTask(task)) {
             await toggleTaskApi({ tasksPath, line: task.line, done: false });
           } else if (task.source === "entity" && task.entityPath) {
             await editTaskStatusApi({ entityPath: task.entityPath, status: prevStatus });
@@ -214,7 +215,7 @@ export function BulkBar({ projects }: BulkBarProps) {
     for (let i = 0; i < entries.length; i++) {
       const { task, tasksPath } = entries[i];
       try {
-        if (task.source === "inline" && task.line !== undefined) {
+        if (isInlineTask(task)) {
           const pr = await promoteTaskApi({ sourcePath: tasksPath, line: task.line });
           if (pr.ok && pr.data.path) {
             const r = await editTaskStatusApi({ entityPath: pr.data.path, status: "cancelled" });
@@ -306,7 +307,7 @@ export function BulkBar({ projects }: BulkBarProps) {
           } else {
             localFailures++;
           }
-        } else if (task.source === "inline" && task.line !== undefined) {
+        } else if (isInlineTask(task)) {
           const r = await deleteInlineTaskApi({
             tasksPath,
             line: task.line,
