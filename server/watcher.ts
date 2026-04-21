@@ -36,9 +36,9 @@ function isTrackedFile(filePath: string): boolean {
 }
 
 export function startWatcher(
-  onChange: (slug: string | "all") => void
+  onChange: (slug: string | "all", absPath: string) => void
 ): FSWatcher {
-  const pending = new Map<string, ReturnType<typeof setTimeout>>();
+  const pending = new Map<string, { timer: ReturnType<typeof setTimeout>; absPath: string }>();
 
   // depth: 2 — watch PROJECTS_DIR, project subdirs, and tasks/ subdirs
   const watcher = chokidar.watch(PROJECTS_DIR, {
@@ -53,17 +53,20 @@ export function startWatcher(
 
     const slug = extractSlugFromPath(filePath);
 
-    // Debounce per slug — Obsidian often fires two events per save
+    // Debounce per slug — Obsidian often fires two events per save.
+    // Sprint I.4.16 — also remember the last absPath so the cache-
+    // invalidate callback can route by path when slug == "all".
     const existing = pending.get(slug);
-    if (existing) clearTimeout(existing);
+    if (existing) clearTimeout(existing.timer);
 
-    pending.set(
-      slug,
-      setTimeout(() => {
+    pending.set(slug, {
+      absPath: filePath,
+      timer: setTimeout(() => {
+        const entry = pending.get(slug);
         pending.delete(slug);
-        onChange(slug);
-      }, DEBOUNCE_MS)
-    );
+        onChange(slug, entry?.absPath ?? filePath);
+      }, DEBOUNCE_MS),
+    });
   }
 
   watcher.on("change", handleChange);

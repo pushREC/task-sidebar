@@ -4,7 +4,6 @@ import { createServer as createHttpServer } from "http";
 import { createServer as createViteServer } from "vite";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
-import { buildVaultIndex } from "./vault-index.js";
 import { startWatcher } from "./watcher.js";
 import { sseHandler, broadcast } from "./sse.js";
 import { taskRoutes } from "./routes.js";
@@ -15,6 +14,7 @@ import {
   sweepTombstones,
   TOMBSTONE_TTL_MS,
 } from "./writers/task-tombstone.js";
+import { buildInitial, getVault, getVaultJson, startSanityRebuild, invalidateFile } from "./vault-cache.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -34,6 +34,12 @@ async function start(): Promise<void> {
   if (orphansSwept > 0) {
     process.stderr.write(`[tombstone] startup cleanup removed ${orphansSwept} orphans\n`);
   }
+
+  // Sprint I.4.15 — populate the vault cache BEFORE app.listen. Guarantees
+  // the first /api/vault request never races an empty cache (would 500
+  // via getVault()'s not-initialized throw). Full rebuild cost is ~18ms
+  // per plan §0 baseline, so this adds ~18ms to startup time.
+  await buildInitial();
 
   const app = express();
 
@@ -63,13 +69,30 @@ async function start(): Promise<void> {
   // Task write routes (toggle / add / edit / move)
   app.use("/api", taskRoutes);
 
-  app.get("/api/vault", async (_req, res) => {
+  // Sprint I.4.2 — serve from the in-memory cache populated in
+  // buildInitial() above and kept current by writer-synchronous
+  // invalidateProject calls (plan §0.4 Decision 7). Uses pre-serialized
+  // JSON string (cached once per invalidate) to skip JSON.stringify on
+  // every hit — the 600KB serialize was ~3-5ms of the 8.5ms warm-hit
+  // latency post-cache-landing. Plain text response with manual
+  // Content-Type header is ~2-5× faster than res.json() on large payloads.
+  app.get("/api/vault", (_req, res) => {
     try {
-      const index = await buildVaultIndex();
-      res.json(index);
+      const json = getVaultJson();
+      if (json === null) {
+        // Defensive — getVault() would throw here; getVaultJson returns null.
+        res.status(503).json({ error: "Cache not yet initialized" });
+        return;
+      }
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.send(json);
+      // Reference getVault() just once so TS doesn't mark it unused when
+      // cache invariants are refactored. The pre-serialized path above is
+      // the hot path; this remains as a sanity fallback for future callers.
+      void getVault;
     } catch (err) {
       process.stderr.write(`/api/vault error: ${err}\n`);
-      res.status(500).json({ error: "Failed to build vault index" });
+      res.status(500).json({ error: "Failed to read vault cache" });
     }
   });
 
@@ -101,10 +124,24 @@ async function start(): Promise<void> {
     process.stdout.write("vault-sidebar running at http://127.0.0.1:5174\n");
   });
 
-  // Start file watcher after server is up
-  const watcher = startWatcher((slug) => {
-    broadcast({ type: "vault-changed", slug });
+  // Sprint I.4.16 — watcher invalidates cache BEFORE broadcasting SSE
+  // event. External changes (Obsidian edits, git pulls) that chokidar
+  // catches go through invalidateFile → full rebuild, so clients
+  // fetching after the vault-changed SSE see fresh state.
+  const watcher = startWatcher((slug, absPath) => {
+    void invalidateFile(absPath ?? `1-Projects/${slug}`).then(() => {
+      broadcast({ type: "vault-changed", slug });
+    }).catch((err) => {
+      process.stderr.write(`[vault-cache] watcher invalidate error: ${err}\n`);
+      // Still broadcast so clients can retry; stale response better than silence.
+      broadcast({ type: "vault-changed", slug });
+    });
   });
+
+  // Sprint I.4.17 — sanity rebuild every 60s catches external-change
+  // drift that chokidar may have missed (atomic renames, high-load
+  // Linux inotify gaps). Delta logged to stderr for observability.
+  const sanityCleanup = startSanityRebuild(60_000);
 
   // Sprint H.3.5 — tombstone sweeper. Runs every TOMBSTONE_TTL_MS to
   // delete tombstones older than the TTL (8s default, widened from 5.5s
@@ -121,6 +158,7 @@ async function start(): Promise<void> {
 
   async function shutdown(signal: string): Promise<void> {
     process.stdout.write(`Received ${signal}, shutting down…\n`);
+    sanityCleanup();
     clearInterval(tombstoneSweeper);
     // Final sweep to clean any tombstones that expired during shutdown.
     try {

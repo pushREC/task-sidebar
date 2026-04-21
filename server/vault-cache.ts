@@ -38,12 +38,24 @@ import { VAULT_ROOT } from "./safety.js";
 
 // ─── Module-level state ───────────────────────────────────────────────────
 let cached: VaultIndex | null = null;
+// Sprint I.4.2 polish — pre-serialized JSON string so /api/vault skips
+// JSON.stringify on every hit. 600KB serialize was the dominant cost
+// after the cache landed (full rebuild eliminated, serialize remained).
+let cachedJson: string | null = null;
 let initialBuilt = false;
 
 // Concurrency guard: serialize invalidate calls so two back-to-back writes
 // don't both trigger full rebuilds in parallel (wasteful). The last caller
 // wins; concurrent callers all await the same in-flight rebuild promise.
 let rebuildInFlight: Promise<void> | null = null;
+
+function setCache(next: VaultIndex): void {
+  cached = next;
+  // JSON.stringify on cache update (writer-path, ~3-5ms) instead of on
+  // every read (~3-5ms × every /api/vault hit). Trades writer-path cost
+  // for massive read-path win — reads become memcpy-only.
+  cachedJson = JSON.stringify(next);
+}
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
@@ -63,6 +75,14 @@ export function getVault(): VaultIndex {
 }
 
 /**
+ * Pre-serialized JSON string of the cache. Used by the /api/vault route
+ * to skip JSON.stringify on every hit. Returns null if cache not yet built.
+ */
+export function getVaultJson(): string | null {
+  return cachedJson;
+}
+
+/**
  * Full vault rebuild. Called at server startup BEFORE app.listen so the
  * first request never races an empty cache.
  *
@@ -72,7 +92,7 @@ export function getVault(): VaultIndex {
 export async function buildInitial(): Promise<void> {
   const start = Date.now();
   const next = await buildVaultIndex();
-  cached = next;
+  setCache(next);
   initialBuilt = true;
   const ms = Date.now() - start;
   process.stderr.write(`[vault-cache] buildInitial: ${next.projects.length} projects in ${ms}ms\n`);
@@ -97,7 +117,7 @@ export async function invalidateProject(_slug: string): Promise<void> {
   rebuildInFlight = (async () => {
     try {
       const next = await buildVaultIndex();
-      cached = next;
+      setCache(next);
     } finally {
       rebuildInFlight = null;
     }
@@ -155,7 +175,7 @@ export function startSanityRebuild(intervalMs: number = 60_000): () => void {
             `${taskDelta > 0 ? "+" : ""}${taskDelta} tasks\n`,
           );
         }
-        cached = next;
+        setCache(next);
       })
       .catch((err) => {
         process.stderr.write(`[vault-cache] sanity-rebuild failed: ${err}\n`);
