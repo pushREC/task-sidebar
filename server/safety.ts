@@ -11,8 +11,13 @@ import { realpathSync, existsSync } from "fs";
  * during the public-release sanitization pass).
  */
 const DEFAULT_VAULT = resolve(process.cwd(), "sample-vault");
-export const VAULT_ROOT = process.env.VAULT_ROOT
-  ? resolve(process.env.VAULT_ROOT)
+// Sprint I deferred D-02 — empty-string env var is truthy-falsy in JS's
+// `?` ternary but whitespace-only strings ARE truthy and would resolve
+// to the literal whitespace path. `.trim() || fallback` handles both
+// cases uniformly.
+const envVaultRoot = process.env.VAULT_ROOT?.trim();
+export const VAULT_ROOT = envVaultRoot
+  ? resolve(envVaultRoot)
   : DEFAULT_VAULT;
 /** VAULT_ROOT with trailing slash, for startsWith string-prefix checks. */
 export const VAULT_ROOT_SLASH = VAULT_ROOT + "/";

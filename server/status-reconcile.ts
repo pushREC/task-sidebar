@@ -7,7 +7,9 @@ import { spawn } from "child_process";
  * Set to an absolute path to enable the fire-and-forget call.
  * See docs/LIFE-OS.md for wiring details.
  */
-const RECONCILE_SCRIPT: string | null = process.env.RECONCILE_SCRIPT_PATH || null;
+// Sprint I deferred D-02 — whitespace-only env var collapses to null so
+// the no-op path fires (done-transitions stay local; no subprocess call).
+const RECONCILE_SCRIPT: string | null = process.env.RECONCILE_SCRIPT_PATH?.trim() || null;
 const FIRE_FORGET_TIMEOUT_MS = 3000;
 
 /**

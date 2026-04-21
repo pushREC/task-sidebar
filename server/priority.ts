@@ -7,7 +7,10 @@ import { spawn } from "child_process";
  * chip). Set to an absolute path to enable the subprocess-pooled call.
  * See docs/LIFE-OS.md for wiring details.
  */
-const PRIORITY_SCRIPT: string | null = process.env.PRIORITY_SCRIPT_PATH || null;
+// Sprint I deferred D-02 — whitespace-only env var collapses to null so
+// the graceful-degradation path (priority: null) fires, not the literal
+// whitespace string being passed to spawn.
+const PRIORITY_SCRIPT: string | null = process.env.PRIORITY_SCRIPT_PATH?.trim() || null;
 const POOL_SIZE = 4;
 const TIMEOUT_MS = 500;
 const LRU_CAP = 500;
