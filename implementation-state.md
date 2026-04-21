@@ -103,9 +103,70 @@ Verification gate:
 - tsc: 0 errors
 - verify.sh against real-vault via launchd server: `TOTAL: 37 / 37 passed, 0 failed` (37 is the post-sanitization count; the pre-sanitization "39/39" references in the plan are stale)
 
-## Phase I — Performance Bedrock
+## Phase I — Performance Bedrock (PARTIAL — 2026-04-21)
 
-All tasks NOT STARTED. Scheduled after Phase 0 ships. Spec in `~/.claude/plans/spicy-jumping-pike.md` §7.
+Shipped 13 commits on top of `350c987`. Head after session: `3515a5e` pushed to `origin/main`.
+
+### 14.14.1 Pre-Sprint-I Bookkeeping — COMPLETE
+- Commit `95a8ad2` — reconciled state-docs (P0.T4 flip + perf-baselines/sprint-i-pre.md + PLAN-II-LOG retroactive entries)
+
+### 14.14.2 Sprint I.1 Type Migration — COMPLETE
+- Commit `0491069` — I.1.4 api.ts strict flip + cascade narrow (TaskRow + TaskDetailPanel + AgendaView Enriched<T>)
+- Commit `43af048` — I.1.1 BulkBar 4-site isInlineTask(task) + TaskDetailPanel residual
+- T-I4 achieved: zero loose guards in `src/`
+
+### 14.14.3 Sprint I.2 DOM Density — COMPLETE
+- Commit `8fadacd` — I.2.1 AgendaView lazy-mount
+- Commit `afefd7e` — I.2.3 content-visibility: auto on .task-row + I.2.2 ProjectsView no-op confirm
+
+### 14.14.4 Sprint I.3 useShallow Collapse — COMPLETE
+- Commit `8fdd47c` — TaskRow 12 selectors → 2 (1 useShallow + 1 Map.get). B2 preempt honored.
+
+### 14.14.5 Sprint I.4 Server Cache (CRITICAL PATH) — COMPLETE
+- Commit `15beb95` — I.4.1 server/vault-cache.ts created
+- Commit `3ca487d` — I.4.2+I.4.15+I.4.16+I.4.17 wired into server/index.ts + watcher.ts
+- Commit `ddbbf7b` — I.4.3 through I.4.14 + I.4.13b invalidateFile wired into 13 writer files
+- T-I1 achieved: `/api/vault` warm p50 = 4.40ms (4.06× baseline win, target <5ms)
+- T-I3 achieved: writer-synchronous invalidate-before-broadcast contract
+
+### 14.14.6 Sprint I.5 SSE Coalesce — COMPLETE
+- Commit `74cddd0` — 100ms trailing-edge debounce in server/sse.ts
+
+### 14.14.7 Sprint I.6 Bulk Move — DEFERRED (~3.5h new feature; next session)
+
+### 14.14.8 Sprint I.7 Locale — COMPLETE
+- Commit `d1160b9` — 4 sites "en-US" → undefined (src/lib/format.ts + src/App.tsx)
+
+### 14.14.9 Sprint I.8 Manual SSE Reconnect — COMPLETE
+- Commit `5b0e105` — subscribeVaultEvents { close, reconnect } + Retry button + exponential backoff + 600ms Reconnected flash
+
+### 14.14.10 Sprint I Deferred Hardening — PARTIAL COMPLETE
+- Commit `3515a5e` — D-02 VAULT_ROOT/priority/reconcile empty-env fallback + D-07 plist chmod 0600
+- D-01, D-03, D-04, D-05 deferred to follow-up (HANDOFF §4.3 still tracks)
+
+### 14.14.11 Sprint I.9 Exit Gate + Convergence — DEFERRED
+- agent-orchestrator gap-convergence NOT run
+- Playwright CLI video NOT recorded
+- Before/after screenshots NOT captured
+
+## Phase J — Feel Layer (DEFERRED to follow-up session)
+
+## Phase K — Closure Audit (DEFERRED to follow-up session)
+
+## Session 2026-04-21 empirical wins
+
+| Metric | Baseline | Post-Sprint-I-partial | Win |
+|---|---|---|---|
+| /api/vault warm p50 | 17.89 ms | 4.40 ms | 4.06× ✓ |
+| /api/vault min | 13.70 ms | 3.28 ms | 4.18× |
+| Loose-guard patterns in src/ | 7 sites | 0 ✓ | T-I4 |
+| api.ts Task shape | loose interface | strict re-export | — |
+| TaskRow useSidebarStore calls | 12 | 2 | 83% reduction |
+| Writer-synchronous invalidate wired | 0 | 13 files + 15 sites | T-I3 |
+| en-US hardcoded | 4 sites | 0 ✓ | T-I6 foundation |
+| SSE Retry button | missing | wired + countdown | T-I8 foundation |
+
+Full post-execution baseline: `docs/perf-baselines/sprint-i-post.md`.
 
 ## Phase J — Feel Layer
 
