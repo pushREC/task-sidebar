@@ -6,6 +6,7 @@ import {
   editTaskApi,
   moveTaskApi,
   editTaskFieldApi,
+  isInlineTask,
   promoteAndEditTaskApi,
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
@@ -126,7 +127,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
     }
     e.stopPropagation();
     if (!tasksPath) return;
-    if (task.line === undefined) return;
+    if (!isInlineTask(task)) return;
     const taskLine = task.line;
 
     const newDone = !task.done;
@@ -318,7 +319,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
 
   function commitEdit() {
     if (!tasksPath) { cancelEditing(); return; }
-    if (task.line === undefined) { cancelEditing(); return; }
+    if (!isInlineTask(task)) { cancelEditing(); return; }
     const taskLine = task.line;
     const trimmed = editText.trim();
     if (!trimmed || trimmed === task.action) { cancelEditing(); return; }
@@ -341,7 +342,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
   function handleMoveChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const targetSlug = e.target.value;
     if (!targetSlug || !tasksPath) return;
-    if (task.line === undefined) return;
+    if (!isInlineTask(task)) return;
     const taskLine = task.line;
 
     moveTaskApi({ sourcePath: tasksPath, line: taskLine, targetSlug }).then(

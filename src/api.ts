@@ -1,13 +1,16 @@
-// Sprint G CONTRACT-001 — the canonical shapes are now in src/shared/types.ts
-// (discriminated Task union, etc.). api.ts keeps a LOOSE Task shape for
-// backward-compat with existing Sprint A-F consumers that still use
-// `task.line !== undefined` guards. The shared types are available for
-// new code that wants strict narrowing.
+// Sprint I.1.4 — api.ts re-exports the strict discriminated types from
+// src/shared/types.ts as the SINGLE SOURCE OF TRUTH. The prior loose
+// Task/Project/VaultResponse interfaces have been removed; all consumers
+// now narrow via `isInlineTask(task)` / `isEntityTask(task)` before
+// accessing location fields.
 //
-// Pragmatic choice: migrating all consumers to the discriminated union
-// in a single sprint would create 40+ line-level edits in TaskRow +
-// views + popovers. We keep the loose shape here and migrate site-by-
-// site in future sprints.
+// Strict contract:
+//   - Task = InlineTask | EntityTask (discriminated on `source`)
+//   - InlineTask has `line: number` + `tasksPath: string`
+//   - EntityTask has `entityPath: string`
+//
+// Cascade sites narrowed during I.1.4: TaskRow.tsx, TaskDetailPanel.tsx,
+// AgendaView.tsx (Enriched<T> generic), ProjectsView.tsx, BulkBar.tsx.
 export type {
   TaskStatus,
   OwnerValue,
@@ -18,69 +21,18 @@ export type {
   PriorityResult,
   InlineTask,
   EntityTask,
-  Project as ProjectStrict,
-  VaultResponse as VaultResponseStrict,
+  Task,
+  Project,
+  VaultResponse,
 } from "./shared/types.js";
 export { isInlineTask, isEntityTask } from "./shared/types.js";
 
-/**
- * Loose Task shape — optional location fields so existing Sprint A-F
- * consumers compile without touching their line-guards. New code
- * should prefer the discriminated `InlineTask | EntityTask` union
- * from `./shared/types.js` for stricter narrowing.
- */
-export interface Task {
-  id: string;
-  action: string;
-  done: boolean;
-  owner?: "human" | "agent" | "either";
-  line?: number;
-  projectSlug?: string;
-  projectTitle?: string;
-  source?: "inline" | "entity";
-  entityPath?: string;
-  energyLevel?: "low" | "medium" | "high";
-  estimatedDuration?: number;
-  due?: string;
-  impact?: "very-high" | "high" | "medium" | "low" | "very-low";
-  urgency?: "very-high" | "high" | "medium" | "low" | "very-low";
-  blockedBy?: string[];
-  parentProject?: string;
-  created?: string;
-  modified?: string;
-  body?: string;
-  priority?: { score: number; rank: "critical" | "high" | "medium" | "low"; breakdown: Record<string, number> };
-  overdue?: boolean;
-  dueToday?: boolean;
-  upcoming?: boolean;
-  status?: "backlog" | "open" | "in-progress" | "blocked" | "done" | "cancelled";
-}
+// Convenience re-export aliases for any legacy import sites. Kept for
+// one sprint then removed in Sprint L polish if no consumers reference.
+export type { Project as ProjectStrict, VaultResponse as VaultResponseStrict } from "./shared/types.js";
 
-export interface Project {
-  slug: string;
-  title: string;
-  status: string;
-  driver?: string;
-  due?: string;
-  parentGoal?: string;
-  tasksPath: string;
-  readmePath?: string;
-  tasks: Task[];
-  outcome?: string;
-  deadline?: string;
-  targetDate?: string;
-  startDate?: string;
-  progress?: number;
-  tasksDoneCount?: number;
-  tasksNotDoneCount?: number;
-  tasksOverdueCount?: number;
-}
-
-export interface VaultResponse {
-  projects: Project[];
-  today: Task[];
-  generatedAt: string;
-}
+// Internal import used below for Task-typed fields in wrapper response shapes.
+import type { Task, VaultResponse } from "./shared/types.js";
 
 // ─── Write API response shape ─────────────────────────────────────────────
 

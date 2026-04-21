@@ -8,6 +8,8 @@ import {
   editTaskFieldApi,
   editTaskStatusApi,
   fetchVault,
+  isEntityTask,
+  isInlineTask,
   nextVaultSeq,
   promoteAndEditTaskApi,
   promoteTaskApi,
@@ -535,8 +537,8 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
 
   const saveField = useCallback(
     async (field: string, value: string | number | null, expectedModified?: string): Promise<void> => {
-      if (isInline) {
-        if (!tasksPath || task.line === undefined) return;
+      if (isInlineTask(task)) {
+        if (!tasksPath) return;
         setSaveState("saving");
         // Inline path: promote-and-edit — the entity file doesn't exist
         // yet, so mtime-lock doesn't apply on this first call. After
@@ -557,7 +559,7 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         return;
       }
 
-      if (!task.entityPath) return;
+      if (!isEntityTask(task)) return;
       setSaveState("saving");
       const result = await editTaskFieldApi({
         entityPath: task.entityPath,
@@ -584,14 +586,17 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    [isInline, task.entityPath, task.line, tasksPath, onPromoted, onMtimeConflict]
+    // Sprint I.1.4 — with strict Task union, `task.entityPath` / `task.line`
+    // no longer exist on the union; use `task` in deps (narrower than .id
+    // because action/status changes should re-bind the callback too).
+    [task, tasksPath, onPromoted, onMtimeConflict]
   );
 
   const saveStatus = useCallback(
     async (status: string): Promise<void> => {
       // B07 — inline task status change: two-step promote → status-edit.
-      if (isInline) {
-        if (!tasksPath || task.line === undefined) return;
+      if (isInlineTask(task)) {
+        if (!tasksPath) return;
         setSaveState("saving");
         const promoteResult = await promoteTaskApi({
           sourcePath: tasksPath,
@@ -622,7 +627,7 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         return;
       }
 
-      if (!task.entityPath) return;
+      if (!isEntityTask(task)) return;
       setSaveState("saving");
       const result = await editTaskStatusApi({ entityPath: task.entityPath, status });
       if (result.ok) {
@@ -632,14 +637,16 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    [isInline, task.entityPath, task.line, tasksPath, onPromoted]
+    // Sprint I.1.4 — strict Task union; task.entityPath/line not in union,
+    // use `task` in deps.
+    [task, tasksPath, onPromoted]
   );
 
   const saveBody = useCallback(
     async (body: string, expectedModified?: string): Promise<void> => {
       // Body edits only exist for entity tasks. If the user is editing notes
       // on an inline task, the UI doesn't surface the row — this is a guard.
-      if (!task.entityPath) return;
+      if (!isEntityTask(task)) return;
       setSaveState("saving");
       const result = await editTaskBodyApi({
         entityPath: task.entityPath,
@@ -658,7 +665,9 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    [task.entityPath, onMtimeConflict]
+    // Sprint I.1.4 — strict Task union; use `task` in deps (re-bind callback
+    // when source or path fields change, not just identity).
+    [task, onMtimeConflict]
   );
 
   return { saveState, saveField, saveStatus, saveBody };

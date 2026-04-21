@@ -23,11 +23,17 @@ interface AgendaViewProps {
   projects: Project[];
 }
 
-interface EnrichedTask extends Task {
+// Sprint I.1.3 — generic `Enriched<T>` preserves the discriminated Task
+// union through view-layer enrichment. `interface EnrichedTask extends Task`
+// fails on a union type because TypeScript can't extend `InlineTask | EntityTask`
+// with a single interface (no statically-known members across the union).
+// Generic intersection distributes: `Enriched<InlineTask | EntityTask>` =
+// `Enriched<InlineTask> | Enriched<EntityTask>`, preserving narrowing on `source`.
+export type Enriched<T extends Task> = T & {
   projectSlug: string;
   projectTitle: string;
   projectTasksPath: string;
-}
+};
 
 export function AgendaView({ projects }: AgendaViewProps) {
   const collapsedBuckets = useSidebarStore((s) => s.collapsedBuckets);
@@ -49,8 +55,8 @@ export function AgendaView({ projects }: AgendaViewProps) {
   const now = useMemo(() => new Date(), [projects, epochDay]);
 
   // Flatten all eligible tasks with project metadata attached.
-  const allTasks = useMemo<EnrichedTask[]>(() => {
-    const out: EnrichedTask[] = [];
+  const allTasks = useMemo<Enriched<Task>[]>(() => {
+    const out: Enriched<Task>[] = [];
     for (const p of projects) {
       if (!AGENDA_PROJECT_STATUSES.has(p.status)) continue;
       for (const t of p.tasks) {
@@ -59,7 +65,7 @@ export function AgendaView({ projects }: AgendaViewProps) {
           projectSlug: p.slug,
           projectTitle: p.title,
           projectTasksPath: p.tasksPath,
-        });
+        } as Enriched<Task>);
       }
     }
     return out;
