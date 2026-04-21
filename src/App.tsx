@@ -65,6 +65,11 @@ export function App() {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectFnRef = useRef<(() => void) | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sprint I.9 R1 — Codex SSE-BACKOFF-RESETS-ON-TRANSIENT-OPEN (LOW) fix:
+  // reset backoff only after the connection stays open for ≥3s. Prevents
+  // flapping connection (open → drop → open → drop within 100ms) from
+  // infinitely retrying at 2s delay.
+  const stableOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showThemePopover, setShowThemePopover] = useState(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncTimerTwoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -194,9 +199,18 @@ export function App() {
             clearTimeout(sseBannerTimerRef.current);
             sseBannerTimerRef.current = null;
           }
-          // Sprint I.8 — successful connection: reset exponential backoff
-          // + cancel any pending retry timer + flash "Reconnected" for 600ms.
-          retryDelayMsRef.current = 2000;
+          // Sprint I.9 R1 — Codex SSE-BACKOFF-RESETS-ON-TRANSIENT-OPEN (LOW):
+          // only reset exponential backoff after the connection stays open
+          // for ≥3s. A flapping connection (open → drop → open → drop)
+          // previously reset to 2s delay every time, causing infinite fast
+          // retries. stableOpenTimerRef defers the backoff reset.
+          if (stableOpenTimerRef.current !== null) {
+            clearTimeout(stableOpenTimerRef.current);
+          }
+          stableOpenTimerRef.current = setTimeout(() => {
+            retryDelayMsRef.current = 2000;
+            stableOpenTimerRef.current = null;
+          }, 3000);
           if (retryTimerRef.current !== null) {
             clearTimeout(retryTimerRef.current);
             retryTimerRef.current = null;
@@ -205,6 +219,15 @@ export function App() {
           // Only flash if we were previously disconnected (avoid flash on
           // initial page load when state immediately goes to "open").
           if (sseBannerVisible) {
+            // Sprint I.9 R1 — Gemini FOCUS-LOSS-BANNER-TRANSITION (HIGH) +
+            // FOCUS-LOST-ON-AUTOHIDE (MEDIUM): if focus is on the Retry
+            // button inside the banner, move it to QuickAdd input BEFORE
+            // the banner unmounts. Otherwise focus drops to body.
+            const activeIn = (document.activeElement as HTMLElement | null)?.closest(".sse-banner");
+            if (activeIn !== null && activeIn !== undefined) {
+              const quickAddInput = document.querySelector<HTMLInputElement>(".quick-add-input");
+              if (quickAddInput) quickAddInput.focus();
+            }
             setReconnectedFlash(true);
             if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current);
             flashTimerRef.current = setTimeout(() => {
@@ -212,11 +235,20 @@ export function App() {
               flashTimerRef.current = null;
             }, 600);
           }
-        } else if (sseBannerTimerRef.current === null) {
-          sseBannerTimerRef.current = setTimeout(() => {
-            setSseBannerVisible(true);
-            sseBannerTimerRef.current = null;
-          }, SSE_BANNER_THRESHOLD_MS);
+        } else {
+          // Sprint I.9 R1 — cancel any pending stable-open timer if
+          // connection closes before the 3s dwell completes. Backoff
+          // retains its progressive value.
+          if (stableOpenTimerRef.current !== null) {
+            clearTimeout(stableOpenTimerRef.current);
+            stableOpenTimerRef.current = null;
+          }
+          if (sseBannerTimerRef.current === null) {
+            sseBannerTimerRef.current = setTimeout(() => {
+              setSseBannerVisible(true);
+              sseBannerTimerRef.current = null;
+            }, SSE_BANNER_THRESHOLD_MS);
+          }
         }
       }
     );
@@ -337,8 +369,13 @@ export function App() {
             {sseState === "closed"
               ? "Disconnected from server"
               : "Reconnecting to vault…"}
+            {/* Sprint I.9 R1 — Gemini ARIA-LIVE-COUNTDOWN-NOISE (MEDIUM): the
+                ticking countdown is wrapped in a SEPARATE span with
+                aria-live="off" so screen readers announce the parent message
+                ONCE, not every second. The countdown remains visually
+                present but silent to AT. */}
             {retrySecondsLeft !== null && sseState === "closed" && (
-              <> · Retrying in {retrySecondsLeft}s</>
+              <span aria-live="off"> · Retrying in {retrySecondsLeft}s</span>
             )}
           </span>
           <button
