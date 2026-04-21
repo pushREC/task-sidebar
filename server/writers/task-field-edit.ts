@@ -4,6 +4,7 @@ import matter from "gray-matter";
 import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { assertMtimeMatch } from "./mtime-lock.js";
+import { invalidateFile } from "../vault-cache.js";
 
 /**
  * Updates a single frontmatter field on a canonical entity task file.
@@ -155,6 +156,9 @@ export async function editTaskField(input: TaskFieldEditInput): Promise<TaskFiel
 
   const updated = matter.stringify(parsed.content, parsed.data);
   await writeFileAtomic(resolvedPath, updated);
+
+  // Sprint I.4.7 — invalidate-before-return (plan §0.4 Decision 7).
+  await invalidateFile(resolvedPath);
 
   return { entityPath: toRelative(resolvedPath) };
 }

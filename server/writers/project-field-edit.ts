@@ -4,6 +4,7 @@ import { join } from "path";
 import matter from "gray-matter";
 import { assertSafeTasksPath, safetyError, VAULT_ROOT, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
+import { invalidateFile } from "../vault-cache.js";
 
 // Canonical project fields editable via the field-edit endpoint.
 // `status` is ALSO here — project-status doesn't have a state machine yet.
@@ -149,6 +150,9 @@ export async function editProjectField(input: ProjectFieldEditInput): Promise<Pr
 
   const updated = matter.stringify(parsed.content, parsed.data);
   await writeFileAtomic(readmePath, updated);
+
+  // Sprint I.4.12 — invalidate-before-return (plan §0.4 Decision 7).
+  await invalidateFile(readmePath);
 
   return { readmePath: toRelative(readmePath) };
 }

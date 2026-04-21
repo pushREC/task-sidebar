@@ -4,6 +4,7 @@ import matter from "gray-matter";
 import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { assertMtimeMatch } from "./mtime-lock.js";
+import { invalidateFile } from "../vault-cache.js";
 
 /**
  * Replaces the markdown body (everything after frontmatter) of an entity
@@ -101,6 +102,9 @@ export async function editTaskBody(
   const stringified = matter.stringify(normalizedBody, parsed.data);
   const updated = stringified.replace(/\n*$/, "\n");
   await writeFileAtomic(resolved, updated);
+
+  // Sprint I.4.14 — invalidate-before-return (plan §0.4 Decision 7).
+  await invalidateFile(resolved);
 
   return { entityPath: toRelative(resolved) };
 }

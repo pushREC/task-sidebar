@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { moveToTombstone, moveInlineToTombstone } from "./task-tombstone.js";
+import { invalidateFile } from "../vault-cache.js";
 
 /**
  * Task deletion — two shapes:
@@ -72,6 +73,10 @@ export async function deleteEntityTask(
   // ENOENT races are handled by the sweeper's existsSync guard.
   try {
     const { tombstoneId } = await moveToTombstone(resolved);
+    // Sprint I.4.13 — invalidate-after-success, before returning the
+    // tombstoneId (plan §0.4 Decision 7 + preempt B5 delete path).
+    // Only fires on successful tombstone move; ENOENT races below skip it.
+    await invalidateFile(resolved);
     return { entityPath: toRelative(resolved), tombstoneId };
   } catch (err) {
     if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "ENOENT") {
@@ -179,6 +184,10 @@ export async function deleteInlineTask(
   if (endedWithNewline && !updated.endsWith("\n")) updated += "\n";
 
   await writeFileAtomic(resolved, updated);
+
+  // Sprint I.4.13 — invalidate-before-return for inline delete (plan §0.4
+  // Decision 7). Pairs with the entity-path invalidate above + B5 preempt.
+  await invalidateFile(resolved);
 
   return { tasksPath: toRelative(resolved), line: input.line, tombstoneId };
 }

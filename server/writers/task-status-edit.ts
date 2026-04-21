@@ -4,6 +4,7 @@ import matter from "gray-matter";
 import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT_SLASH } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { queueReconcile, cancelReconcile } from "../status-reconcile-queue.js";
+import { invalidateFile } from "../vault-cache.js";
 
 const VALID_STATUSES = new Set([
   "backlog",
@@ -75,6 +76,9 @@ export async function editTaskStatus(input: TaskStatusEditInput): Promise<TaskSt
 
   const updated = matter.stringify(updatedContent, parsed.data);
   await writeFileAtomic(resolvedPath, updated);
+
+  // Sprint I.4.8 — invalidate-before-return (plan §0.4 Decision 7).
+  await invalidateFile(resolvedPath);
 
   // Sprint G — reconcile is now QUEUED with 5s delay instead of fire-and-forget.
   // A same-entity status change within the window cancels the pending

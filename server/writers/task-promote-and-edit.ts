@@ -5,6 +5,7 @@ import { join, dirname } from "path";
 import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT } from "../safety.js";
 import { writeFileExclusive, writeFileAtomic } from "./atomic.js";
 import { editTaskField } from "./task-field-edit.js";
+import { invalidateFile } from "../vault-cache.js";
 
 // Matches inline checkbox tasks including [/]
 const TASK_LINE_RE = /^(\s*)- \[([ xX/])\]\s+(.+)$/;
@@ -216,6 +217,13 @@ export async function promoteAndEditTask(
     newLines.splice(zeroIdx, 1);
     await writeFileAtomic(tasksPath, newLines.join("\n"));
   }
+
+  // Sprint I.4.11 — invalidate-before-return (plan §0.4 Decision 7).
+  // Both entityFilePath and tasksPath live under the same project slug;
+  // one invalidate covers both. editTaskField internally invalidates
+  // too (I.4.7), so this is belt-and-suspenders for the rare path
+  // where fieldEditSucceeded was false and the inline removal skipped.
+  await invalidateFile(tasksPath);
 
   return {
     entityPath: entityRelPath,

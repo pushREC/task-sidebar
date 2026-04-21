@@ -3,6 +3,7 @@ import { mkdir } from "fs/promises";
 import { join } from "path";
 import { assertSafeTasksPath, escapeTaskText, safetyError, VAULT_ROOT } from "../safety.js";
 import { writeFileExclusive } from "./atomic.js";
+import { invalidateFile } from "../vault-cache.js";
 
 /**
  * Slugify an action string into a valid filename slug.
@@ -122,6 +123,9 @@ export async function createEntityTask(input: TaskCreateEntityInput): Promise<Ta
   }
 
   await writeFileExclusive(entityFilePath, fileContent);
+
+  // Sprint I.4.9 — invalidate-before-return (plan §0.4 Decision 7).
+  await invalidateFile(entityFilePath);
 
   return {
     path: entityFilePath,

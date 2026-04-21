@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { extractSlug } from "./slug.js";
+import { invalidateFile } from "../vault-cache.js";
 
 // Matches [ ], [x], [X], [/]
 const TASK_LINE_RE = /^(\s*)- \[([ xX/])\](\s+.+)$/;
@@ -96,6 +97,11 @@ export async function toggleTask(input: ToggleTaskInput): Promise<ToggleTaskResu
   lines[zeroIdx] = `${indent}- [${newCheckbox}]${rest}`;
 
   await writeFileAtomic(tasksPath, lines.join("\n"));
+
+  // Sprint I.4.3 — invalidate vault-cache BEFORE returning so the next
+  // /api/vault read (fired by SSE refetch or polling) sees this change.
+  // Plan §0.4 Decision 7: writer-synchronous invalidate-before-broadcast.
+  await invalidateFile(tasksPath);
 
   const slug = extractSlug(tasksPath);
   return { slug, path: tasksPath, newCheckbox };

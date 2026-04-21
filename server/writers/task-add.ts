@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { assertSafeTasksPath, escapeTaskText, safetyError, VAULT_ROOT } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
+import { invalidateFile } from "../vault-cache.js";
 
 export interface AddTaskInput {
   slug: string;
@@ -109,6 +110,9 @@ export async function addTask(input: AddTaskInput): Promise<AddTaskResult> {
   }
 
   await writeFileAtomic(tasksPath, lines.join("\n"));
+
+  // Sprint I.4.4 — invalidate-before-return (plan §0.4 Decision 7).
+  await invalidateFile(tasksPath);
 
   // insertIdx is 0-based; line numbers are 1-based
   return { slug, path: tasksPath, line: insertIdx + 1 };

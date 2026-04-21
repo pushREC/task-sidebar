@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { assertSafeTasksPath, escapeTaskText, resolveTasksPath, safetyError } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
 import { extractSlug } from "./slug.js";
+import { invalidateFile } from "../vault-cache.js";
 
 const TASK_LINE_RE = /^(\s*- \[[ xX]\]\s+)(.+)$/;
 
@@ -59,6 +60,9 @@ export async function editTask(input: EditTaskInput): Promise<EditTaskResult> {
   lines[zeroIdx] = `${prefix}${cleanText}`;
 
   await writeFileAtomic(tasksPath, lines.join("\n"));
+
+  // Sprint I.4.5 — invalidate-before-return (plan §0.4 Decision 7).
+  await invalidateFile(tasksPath);
 
   const slug = extractSlug(tasksPath);
   return { slug, path: tasksPath };

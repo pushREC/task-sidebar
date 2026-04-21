@@ -4,6 +4,7 @@ import { mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import { assertSafeTasksPath, resolveTasksPath, safetyError, VAULT_ROOT } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
+import { invalidateFile } from "../vault-cache.js";
 
 // Matches inline checkbox tasks including [/]
 const TASK_LINE_RE = /^(\s*)- \[([ xX/])\]\s+(.+)$/;
@@ -152,6 +153,11 @@ export async function promoteTask(input: TaskPromoteInput): Promise<TaskPromoteR
   const newLines = [...lines];
   newLines.splice(zeroIdx, 1);
   await writeFileAtomic(tasksPath, newLines.join("\n"));
+
+  // Sprint I.4.10 — invalidate-before-return (plan §0.4 Decision 7).
+  // Both entityFilePath and tasksPath live under the same project slug;
+  // one invalidate covers both (v1 full-rebuild semantics).
+  await invalidateFile(tasksPath);
 
   return {
     entityPath: entityRelPath,

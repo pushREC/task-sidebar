@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import { safetyError, assertSafeTasksPath } from "../safety.js";
 import { writeFileAtomic, writeFileExclusive } from "./atomic.js";
+import { invalidateFile } from "../vault-cache.js";
 
 /**
  * Sprint H.3.1 — real delete-undo via tombstoned files.
@@ -242,6 +243,12 @@ export async function restoreFromTombstone(tombstoneId: string): Promise<Restore
       const bytes = await readFile(tombstonePath);
       await writeFileExclusive(targetAbs, bytes.toString("utf8"));
       await unlink(tombstonePath);
+      // Sprint I.4.13b — B5 symmetric-restore invalidation (entity path).
+      // Mirrors the delete-path invalidate in task-delete.ts; without
+      // this, /api/vault serves stale cache (restored task missing)
+      // until the 60s sanity-rebuild timer catches the drift. Plan §0.4
+      // Decision 7 + HANDOFF §5 preempt B5 (expanded iter-2).
+      await invalidateFile(targetAbs);
     } catch (err) {
       // R1 MEDIUM (Opus #3) — sweeper race: tombstone swept between
       // decode and read → ENOENT. Translate to 404 for the client.
@@ -310,6 +317,12 @@ export async function restoreFromTombstone(tombstoneId: string): Promise<Restore
   if (raw.endsWith("\n") && !updated.endsWith("\n")) updated += "\n";
   await writeFileAtomic(targetAbs, updated);
   try { await unlink(tombstonePath); } catch { /* may have been swept — OK */ }
+
+  // Sprint I.4.13b — B5 symmetric-restore invalidation (inline path).
+  // Pairs with the entity restore invalidate above. Plan §0.4 Decision 7
+  // + HANDOFF §5 preempt B5.
+  await invalidateFile(targetAbs);
+
   return { kind: "inline", restoredPath: decoded.originalPath };
 }
 

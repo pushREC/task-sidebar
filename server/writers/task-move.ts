@@ -4,6 +4,7 @@ import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js
 import { writeFileAtomic } from "./atomic.js";
 import { addTask } from "./task-add.js";
 import { extractSlug } from "./slug.js";
+import { invalidateFile } from "../vault-cache.js";
 
 const TASK_LINE_RE = /^(\s*)- \[([ xX])\]\s+(.+)$/;
 
@@ -75,9 +76,15 @@ export async function moveTask(input: MoveTaskInput): Promise<MoveTaskResult> {
   // Write source atomically first — before touching the target
   await writeFileAtomic(sourcePath, cleaned.join("\n"));
 
+  // Sprint I.4.6 — invalidate source project cache BEFORE addTask
+  // touches target (addTask's own invalidate covers targetSlug).
+  // Keeps the vault-cache consistent during the cross-project move.
+  await invalidateFile(sourcePath);
+
   const sourceSlug = extractSlug(sourcePath);
 
-  // Add to target
+  // Add to target — addTask internally invalidates targetSlug's cache
+  // (I.4.4 wire-in), so we don't need a second invalidateProject here.
   await addTask({ slug: targetSlug, text: extractedText, section: "open" });
 
   return { sourceSlug, targetSlug };
