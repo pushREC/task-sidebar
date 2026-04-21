@@ -97,7 +97,7 @@ Post-sanitization + post-supremacy-audit ergonomics work. Enables "always-availa
   - Server responds HTTP 200 at 127.0.0.1:5174
   - `/api/vault` returns 49 projects with `vault-sidebar` slug present, no sample-vault `demo-app` leakage → real-vault target confirmed
   - `/tmp/task-sidebar.log` shows clean `tsx server/index.ts` boot, no errors
-- P0.T4 — Plan file reconciliation — PENDING (Phase IE language update from "local-only" to "push-to-origin-default"; add Phase 0 + Phase K specs)
+- P0.T4 — Plan file reconciliation — COMPLETE (Phase IE revised to push-to-origin-default in plan §6.9.1; Phase 0 §6.8 + Phase K §13 + Execution Contract §14 landed in plan file; commit 350c987 recorded state-doc HEAD checkpoint advance 03dfb8b → 1533a16; §14 full-rigor rewrite landed 2026-04-21 with 16 phases, First-Principles Decomposition, 13 orchestration questions, anti-pattern + banned-phrase audits, 9/9/9/9/9 self-score)
 
 Verification gate:
 - tsc: 0 errors
