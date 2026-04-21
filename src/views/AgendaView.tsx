@@ -127,6 +127,13 @@ export function AgendaView({ projects }: AgendaViewProps) {
                 non-listitem child (.bucket-empty) doesn't violate the
                 "list must contain listitems" ARIA constraint. */}
             {group.tasks.length > 0 ? (
+              // Sprint I.2.1 — lazy-mount: children only in React tree
+              // when expanded. `hidden` attribute alone kept them mounted
+              // (~13 DOM nodes per TaskRow × 2k tasks = 26k wasted). Now
+              // collapsed buckets emit zero TaskRow fiber. DOM node count
+              // scales with VISIBLE rows only. Panel div stays mounted for
+              // aria-controls resolution (BucketHeader references panelId).
+              // Preempt B3: QuickAdd remains at App.tsx level (unchanged).
               <div
                 id={panelId}
                 className="bucket-body"
@@ -134,7 +141,7 @@ export function AgendaView({ projects }: AgendaViewProps) {
                 aria-labelledby={headingId}
                 hidden={collapsed}
               >
-                {group.tasks.map((t, idx) => (
+                {!collapsed && group.tasks.map((t, idx) => (
                   <TaskRow
                     key={t.id}
                     task={t}
@@ -152,7 +159,7 @@ export function AgendaView({ projects }: AgendaViewProps) {
                 aria-labelledby={headingId}
                 hidden={collapsed}
               >
-                <div className="bucket-empty">Nothing here.</div>
+                {!collapsed && <div className="bucket-empty">Nothing here.</div>}
               </div>
             )}
           </section>
