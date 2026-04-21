@@ -276,31 +276,50 @@ export async function fetchVault(): Promise<VaultResponse> {
  */
 export type SSEConnectionState = "open" | "closed" | "connecting";
 
+/**
+ * Sprint I.8 — return both close + reconnect handles. `close` tears down
+ * the EventSource on unmount. `reconnect` explicitly closes + reopens
+ * the connection when the user clicks the Retry button in the SSE banner.
+ * The EventSource's own auto-reconnect keeps going in the background;
+ * manual reconnect forces a fresh attempt with a clean state transition
+ * instead of waiting for the next browser-driven backoff tick.
+ */
 export function subscribeVaultEvents(
   onChange: () => void,
-  onConnectionChange?: (state: SSEConnectionState) => void
-): () => void {
-  const source = new EventSource("/api/events");
+  onConnectionChange?: (state: SSEConnectionState) => void,
+): { close: () => void; reconnect: () => void } {
+  let source: EventSource | null = null;
 
-  source.addEventListener("vault-changed", () => {
-    onChange();
-  });
+  function attach(): void {
+    source = new EventSource("/api/events");
+    source.addEventListener("vault-changed", () => {
+      onChange();
+    });
+    source.addEventListener("open", () => {
+      onConnectionChange?.("open");
+    });
+    // EventSource fires "error" on initial failure AND on every reconnect
+    // attempt (then auto-retries with increasing backoff). We don't bail;
+    // the browser's own reconnect logic handles the retries.
+    source.addEventListener("error", () => {
+      if (!source) return;
+      const rs = source.readyState;
+      onConnectionChange?.(rs === EventSource.CLOSED ? "closed" : "connecting");
+    });
+  }
 
-  source.addEventListener("open", () => {
-    onConnectionChange?.("open");
-  });
+  attach();
 
-  // EventSource fires "error" on initial failure AND on every reconnect
-  // attempt (then auto-retries with increasing backoff). We don't bail;
-  // the browser's own reconnect logic handles the retries.
-  source.addEventListener("error", () => {
-    // readyState === CONNECTING (0) → reconnect in flight
-    // readyState === CLOSED (2)     → terminal failure
-    const rs = source.readyState;
-    onConnectionChange?.(rs === EventSource.CLOSED ? "closed" : "connecting");
-  });
-
-  return () => {
-    source.close();
+  return {
+    close: () => {
+      source?.close();
+      source = null;
+    },
+    reconnect: () => {
+      source?.close();
+      source = null;
+      onConnectionChange?.("connecting");
+      attach();
+    },
   };
 }

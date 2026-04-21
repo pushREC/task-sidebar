@@ -55,6 +55,16 @@ export function App() {
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [sseState, setSseState] = useState<SSEConnectionState>("open");
   const [sseBannerVisible, setSseBannerVisible] = useState(false);
+  // Sprint I.8 — manual reconnect state. countdown ticks every 1s while
+  // sseState === "closed" and a retry is pending. `retrySecondsLeft`
+  // feeds the "Retrying in Ns…" UI. `reconnectedFlash` is a 600ms green
+  // pulse when the manual reconnect succeeds (clears via timer).
+  const [retrySecondsLeft, setRetrySecondsLeft] = useState<number | null>(null);
+  const [reconnectedFlash, setReconnectedFlash] = useState(false);
+  const retryDelayMsRef = useRef<number>(2000); // exponential: 2, 4, 8, 16, 32 cap
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectFnRef = useRef<(() => void) | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showThemePopover, setShowThemePopover] = useState(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncTimerTwoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -157,7 +167,7 @@ export function App() {
   }, [loadVault]);
 
   useEffect(() => {
-    const cleanup = subscribeVaultEvents(
+    const handle = subscribeVaultEvents(
       () => {
         pulseSyncPill();
         // H14 — debounce aria-live announcements
@@ -184,6 +194,24 @@ export function App() {
             clearTimeout(sseBannerTimerRef.current);
             sseBannerTimerRef.current = null;
           }
+          // Sprint I.8 — successful connection: reset exponential backoff
+          // + cancel any pending retry timer + flash "Reconnected" for 600ms.
+          retryDelayMsRef.current = 2000;
+          if (retryTimerRef.current !== null) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+          }
+          setRetrySecondsLeft(null);
+          // Only flash if we were previously disconnected (avoid flash on
+          // initial page load when state immediately goes to "open").
+          if (sseBannerVisible) {
+            setReconnectedFlash(true);
+            if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current);
+            flashTimerRef.current = setTimeout(() => {
+              setReconnectedFlash(false);
+              flashTimerRef.current = null;
+            }, 600);
+          }
         } else if (sseBannerTimerRef.current === null) {
           sseBannerTimerRef.current = setTimeout(() => {
             setSseBannerVisible(true);
@@ -192,6 +220,19 @@ export function App() {
         }
       }
     );
+    reconnectFnRef.current = handle.reconnect;
+    const cleanup = () => {
+      handle.close();
+      reconnectFnRef.current = null;
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (flashTimerRef.current !== null) {
+        clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = null;
+      }
+    };
     return cleanup;
   }, [loadVault]);  // R1 HIGH FIX — removed `vault` to prevent reconnect loop
 
@@ -281,13 +322,57 @@ export function App() {
 
   return (
     <div className="sidebar">
-      {/* Sprint F E02 — SSE reconnect banner */}
-      {sseBannerVisible && sseState !== "open" && (
+      {/* Sprint F E02 — SSE reconnect banner.
+          Sprint I.8 — manual Retry button + exponential-backoff countdown.
+          "Reconnected" flash (J.2.15 polish) kicks in for 600ms on open. */}
+      {reconnectedFlash && (
+        <div className="sse-banner sse-banner--reconnected" role="status" aria-live="polite">
+          Reconnected
+        </div>
+      )}
+      {!reconnectedFlash && sseBannerVisible && sseState !== "open" && (
         <div className="sse-banner" role="status" aria-live="polite">
           <span className="sse-banner__dot" aria-hidden="true" />
-          {sseState === "closed"
-            ? "Disconnected from server"
-            : "Reconnecting to vault…"}
+          <span className="sse-banner__message">
+            {sseState === "closed"
+              ? "Disconnected from server"
+              : "Reconnecting to vault…"}
+            {retrySecondsLeft !== null && sseState === "closed" && (
+              <> · Retrying in {retrySecondsLeft}s</>
+            )}
+          </span>
+          <button
+            type="button"
+            className="sse-banner__retry press-scale"
+            onClick={() => {
+              if (retryTimerRef.current !== null) {
+                clearTimeout(retryTimerRef.current);
+                retryTimerRef.current = null;
+              }
+              setRetrySecondsLeft(null);
+              reconnectFnRef.current?.();
+              // If the manual retry lands in "closed" again within 1s, schedule
+              // an exponential-backoff retry loop.
+              const delay = retryDelayMsRef.current;
+              const started = Date.now();
+              const tick = () => {
+                const remaining = Math.max(0, Math.ceil((delay - (Date.now() - started)) / 1000));
+                setRetrySecondsLeft(remaining);
+                if (remaining > 0) {
+                  retryTimerRef.current = setTimeout(tick, 1000);
+                } else {
+                  retryTimerRef.current = null;
+                  setRetrySecondsLeft(null);
+                  reconnectFnRef.current?.();
+                  retryDelayMsRef.current = Math.min(32_000, delay * 2);
+                }
+              };
+              retryTimerRef.current = setTimeout(tick, 1000);
+            }}
+            title="Retry connection"
+          >
+            Retry
+          </button>
         </div>
       )}
 
