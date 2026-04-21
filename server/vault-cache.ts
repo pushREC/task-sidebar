@@ -44,12 +44,35 @@ let cached: VaultIndex | null = null;
 let cachedJson: string | null = null;
 let initialBuilt = false;
 
+// Sprint I.9 R1 fixes — monotonic generation token + dirty-flag queue
+// + setCache out-of-order guard. Three merged findings:
+//
+//   Opus P5 / Codex SANITY-REBUILD-CLOBBER (CRITICAL): sanity-rebuild's
+//     stale snapshot could setCache() AFTER a concurrent writer-invalidate
+//     finished, overwriting fresh data with disk state read 500ms earlier.
+//     FIX: setCache now takes a generation token; stale gens are rejected.
+//
+//   Codex CACHE-COALESCE-DROPS-LATE-WRITE (HIGH): writer B's invalidate
+//     arriving mid-flight of writer A's rebuild would skip its own rebuild,
+//     awaiting A's promise. If B's file write landed AFTER A's disk read,
+//     the cache never sees B. FIX: mid-flight invalidate sets `dirty` flag
+//     so the current rebuild runs a follow-up after completion, reading
+//     fresh disk state.
+let currentGeneration = 0;
+let latestStartedGeneration = 0;
+
 // Concurrency guard: serialize invalidate calls so two back-to-back writes
 // don't both trigger full rebuilds in parallel (wasteful). The last caller
 // wins; concurrent callers all await the same in-flight rebuild promise.
 let rebuildInFlight: Promise<void> | null = null;
+let dirty = false;
 
-function setCache(next: VaultIndex): void {
+function setCache(next: VaultIndex, gen: number): void {
+  // Reject out-of-order updates. Without this guard, sanity-rebuild's
+  // 500ms-old snapshot can overwrite a fresh writer-rebuild that landed
+  // at T+0ms, leaving the cache with pre-write state.
+  if (gen < currentGeneration) return;
+  currentGeneration = gen;
   cached = next;
   // JSON.stringify on cache update (writer-path, ~3-5ms) instead of on
   // every read (~3-5ms × every /api/vault hit). Trades writer-path cost
@@ -91,8 +114,9 @@ export function getVaultJson(): string | null {
  */
 export async function buildInitial(): Promise<void> {
   const start = Date.now();
+  const gen = ++latestStartedGeneration;
   const next = await buildVaultIndex();
-  setCache(next);
+  setCache(next, gen);
   initialBuilt = true;
   const ms = Date.now() - start;
   process.stderr.write(`[vault-cache] buildInitial: ${next.projects.length} projects in ${ms}ms\n`);
@@ -106,18 +130,34 @@ export async function buildInitial(): Promise<void> {
  * v1 implementation: full rebuild. Optimization to per-slug rebuild
  * deferred; current vault sizes (50 projects, ~100 tasks) rebuild in
  * ~18ms which is acceptable on the write-path (not the read-path).
+ *
+ * Sprint I.9 R1 hardening:
+ *   - Mid-flight invalidate sets `dirty` flag so the current rebuild
+ *     runs a follow-up after completion. This closes the Codex-flagged
+ *     CACHE-COALESCE-DROPS-LATE-WRITE race where writer B's file write
+ *     landed after writer A's rebuild's disk read.
+ *   - Each rebuild claims a monotonic generation; setCache rejects
+ *     stale gens, so sanity-rebuild can't clobber fresh cache (Opus P5
+ *     CRITICAL).
  */
 export async function invalidateProject(_slug: string): Promise<void> {
-  // Coalesce concurrent invalidations — only one rebuild runs at a time,
-  // all waiters see the post-rebuild snapshot.
   if (rebuildInFlight) {
+    // Mark dirty so the current rebuild schedules a follow-up after
+    // it completes. Without this, writer B's invalidate would silently
+    // await A's rebuild and return — but A's rebuild may have read
+    // disk BEFORE B's write landed.
+    dirty = true;
     await rebuildInFlight;
     return;
   }
   rebuildInFlight = (async () => {
     try {
-      const next = await buildVaultIndex();
-      setCache(next);
+      do {
+        dirty = false;
+        const gen = ++latestStartedGeneration;
+        const next = await buildVaultIndex();
+        setCache(next, gen);
+      } while (dirty);
     } finally {
       rebuildInFlight = null;
     }
@@ -133,20 +173,38 @@ export async function invalidateProject(_slug: string): Promise<void> {
  * pulls) that don't originate from our writers.
  */
 export async function invalidateFile(path: string): Promise<void> {
-  // Normalize to vault-relative if absolute
-  const rel = path.startsWith(VAULT_ROOT + "/")
-    ? path.slice(VAULT_ROOT.length + 1)
-    : path;
-  // Expect format: 1-Projects/<slug>/...
-  const m = /^1-Projects\/([^/]+)\//.exec(rel);
-  if (!m) {
-    // Not a project file — e.g. 2-Areas, 3-Resources, Daily. Full rebuild
-    // is the safe fallback; goal-timeframe lookups in vault-index pull
-    // from 2-Areas/goals so a goal file change could affect priority.
-    await invalidateProject("_any_");
-    return;
+  // Sprint I.9 R1 — Codex WRITE-COMMITS-BEFORE-CACHE-FAILURE-SURFACES (HIGH):
+  // writer writes file successfully at line N, then calls await invalidateFile
+  // at line N+1. If buildVaultIndex throws (disk read failure, parse error),
+  // the writer's route handler propagates the error as HTTP 500 even though
+  // the underlying file mutation IS durable. Client sees the write as failed,
+  // may retry → double-apply, or rolls back UI state.
+  //
+  // FIX: cache-refresh failures are logged to stderr but do NOT throw.
+  // The file write is the user-visible operation; cache freshness is a
+  // server-side concern the sanity-rebuild timer will reconcile within 60s.
+  try {
+    // Normalize to vault-relative if absolute
+    const rel = path.startsWith(VAULT_ROOT + "/")
+      ? path.slice(VAULT_ROOT.length + 1)
+      : path;
+    // Expect format: 1-Projects/<slug>/...
+    const m = /^1-Projects\/([^/]+)\//.exec(rel);
+    if (!m) {
+      // Not a project file — e.g. 2-Areas, 3-Resources, Daily. Full rebuild
+      // is the safe fallback; goal-timeframe lookups in vault-index pull
+      // from 2-Areas/goals so a goal file change could affect priority.
+      await invalidateProject("_any_");
+      return;
+    }
+    await invalidateProject(m[1]);
+  } catch (err) {
+    process.stderr.write(`[vault-cache] invalidateFile failed for ${path}: ${err}\n`);
+    // Also mark dirty so next invalidate runs a follow-up (defensive —
+    // if we're mid-rebuild, dirty ensures a retry at the next writer's
+    // invalidate OR at the next sanity-rebuild tick).
+    dirty = true;
   }
-  await invalidateProject(m[1]);
 }
 
 /**
@@ -160,10 +218,17 @@ export async function invalidateFile(path: string): Promise<void> {
  */
 export function startSanityRebuild(intervalMs: number = 60_000): () => void {
   const timer = setInterval(() => {
+    // Sprint I.9 R1 — Opus P5 / Codex SANITY-REBUILD-CLOBBER (CRITICAL):
+    // claim a generation BEFORE reading disk. If a concurrent writer-
+    // invalidate bumps currentGeneration while our buildVaultIndex() is
+    // awaiting, setCache() rejects our stale gen and the writer's fresh
+    // data wins. Previously setCache() was unconditional and would
+    // clobber fresh cache with stale disk reads.
     const prevCount = cached?.projects.length ?? 0;
     const prevTaskCount = cached
       ? cached.projects.reduce((s, p) => s + p.tasks.length, 0)
       : 0;
+    const gen = ++latestStartedGeneration;
     buildVaultIndex()
       .then((next) => {
         const nextTaskCount = next.projects.reduce((s, p) => s + p.tasks.length, 0);
@@ -175,7 +240,9 @@ export function startSanityRebuild(intervalMs: number = 60_000): () => void {
             `${taskDelta > 0 ? "+" : ""}${taskDelta} tasks\n`,
           );
         }
-        setCache(next);
+        // setCache guard rejects this if a newer writer-rebuild already
+        // landed (currentGeneration > our gen).
+        setCache(next, gen);
       })
       .catch((err) => {
         process.stderr.write(`[vault-cache] sanity-rebuild failed: ${err}\n`);
