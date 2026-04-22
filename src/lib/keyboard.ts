@@ -19,8 +19,10 @@ function isInputFocused(): boolean {
   if (!ae) return false;
   const tag = ae.tagName?.toLowerCase();
   if (tag === "input" || tag === "textarea" || tag === "select") return true;
-  // Also stand down when focus is inside a popover/palette surface.
-  if (ae.closest(".popover, .cmdp, .cmdp-backdrop")) return true;
+  // Also stand down when focus is inside a popover/palette/picker surface.
+  // Sprint I.6.3 — include `.project-picker` so Bulk Move's combobox owns
+  // ArrowUp/Down/Enter without j/k / Enter bubbling to the global layer.
+  if (ae.closest(".popover, .cmdp, .cmdp-backdrop, .project-picker")) return true;
   return false;
 }
 
