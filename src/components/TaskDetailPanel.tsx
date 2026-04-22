@@ -533,11 +533,28 @@ function EditableNumber({ label, value, placeholder, readOnly, min = 0, modified
 
 function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () => void, onMtimeConflict: () => void) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const isInline = task.source === "inline";
+
+  // Sprint I.9 R1 — Gemini TASKDETAIL-USECALLBACK-OVERBIND (MEDIUM):
+  // previously the three callbacks had `task` in deps, so every SSE-driven
+  // vault refetch (which creates a new `task` object even if all fields are
+  // byte-identical) re-bound all three functions. Editable* child components
+  // that receive these as props then re-rendered unnecessarily on every tick.
+  //
+  // Fix: read `task` through a ref kept fresh via useEffect. Callbacks close
+  // over the ref (stable) instead of `task` (changes every render). Deps
+  // narrow to only the stable external props. Stale-closure safety is
+  // preserved because the ref is mutated on every render BEFORE any event
+  // handler could fire — React guarantees render → commit → effect flush →
+  // user interaction. A save click always reads the freshest task state.
+  const taskRef = useRef(task);
+  useEffect(() => {
+    taskRef.current = task;
+  });
 
   const saveField = useCallback(
     async (field: string, value: string | number | null, expectedModified?: string): Promise<void> => {
-      if (isInlineTask(task)) {
+      const t = taskRef.current;
+      if (isInlineTask(t)) {
         if (!tasksPath) return;
         setSaveState("saving");
         // Inline path: promote-and-edit — the entity file doesn't exist
@@ -545,7 +562,7 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         // promote, subsequent saves go via entity path below.
         const result = await promoteAndEditTaskApi({
           tasksPath,
-          line: task.line,
+          line: t.line,
           field,
           value,
         });
@@ -559,10 +576,10 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         return;
       }
 
-      if (!isEntityTask(task)) return;
+      if (!isEntityTask(t)) return;
       setSaveState("saving");
       const result = await editTaskFieldApi({
-        entityPath: task.entityPath,
+        entityPath: t.entityPath,
         field,
         value,
         expectedModified,
@@ -586,21 +603,22 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    // Sprint I.1.4 — with strict Task union, `task.entityPath` / `task.line`
-    // no longer exist on the union; use `task` in deps (narrower than .id
-    // because action/status changes should re-bind the callback too).
-    [task, tasksPath, onPromoted, onMtimeConflict]
+    // Narrowed deps (I.9 R1): only stable callables + tasksPath. `task` is
+    // read through taskRef.current so it's always fresh without triggering
+    // re-binds on identity-only changes.
+    [tasksPath, onPromoted, onMtimeConflict]
   );
 
   const saveStatus = useCallback(
     async (status: string): Promise<void> => {
+      const t = taskRef.current;
       // B07 — inline task status change: two-step promote → status-edit.
-      if (isInlineTask(task)) {
+      if (isInlineTask(t)) {
         if (!tasksPath) return;
         setSaveState("saving");
         const promoteResult = await promoteTaskApi({
           sourcePath: tasksPath,
-          line: task.line,
+          line: t.line,
         });
         if (!promoteResult.ok) {
           setSaveState("error");
@@ -627,9 +645,9 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         return;
       }
 
-      if (!isEntityTask(task)) return;
+      if (!isEntityTask(t)) return;
       setSaveState("saving");
-      const result = await editTaskStatusApi({ entityPath: task.entityPath, status });
+      const result = await editTaskStatusApi({ entityPath: t.entityPath, status });
       if (result.ok) {
         setSaveState("idle");
       } else {
@@ -637,19 +655,20 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    // Sprint I.1.4 — strict Task union; task.entityPath/line not in union,
-    // use `task` in deps.
-    [task, tasksPath, onPromoted]
+    // Narrowed deps (I.9 R1): taskRef.current gives fresh reads without
+    // dep churn on every SSE refetch.
+    [tasksPath, onPromoted]
   );
 
   const saveBody = useCallback(
     async (body: string, expectedModified?: string): Promise<void> => {
+      const t = taskRef.current;
       // Body edits only exist for entity tasks. If the user is editing notes
       // on an inline task, the UI doesn't surface the row — this is a guard.
-      if (!isEntityTask(task)) return;
+      if (!isEntityTask(t)) return;
       setSaveState("saving");
       const result = await editTaskBodyApi({
-        entityPath: task.entityPath,
+        entityPath: t.entityPath,
         body,
         expectedModified,
       });
@@ -665,9 +684,8 @@ function useSaveField(task: Task, tasksPath: string | undefined, onPromoted: () 
         setTimeout(() => setSaveState("idle"), 2000);
       }
     },
-    // Sprint I.1.4 — strict Task union; use `task` in deps (re-bind callback
-    // when source or path fields change, not just identity).
-    [task, onMtimeConflict]
+    // Narrowed deps (I.9 R1): same pattern — taskRef for fresh reads.
+    [onMtimeConflict]
   );
 
   return { saveState, saveField, saveStatus, saveBody };
