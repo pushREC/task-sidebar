@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { CheckCircle2, X, Trash2 } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { CheckCircle2, FolderInput, X, Trash2 } from "lucide-react";
 import type { Task, Project } from "../api.js";
 import {
   cancelReconcileApi,
@@ -7,7 +7,9 @@ import {
   deleteEntityTaskApi,
   deleteInlineTaskApi,
   fetchVault,
+  isEntityTask,
   isInlineTask,
+  moveEntityTaskApi,
   nextVaultSeq,
   promoteTaskApi,
   restoreTombstoneApi,
@@ -15,6 +17,7 @@ import {
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
 import type { PendingUndo } from "../store.js";
+import { ProjectPicker } from "./ProjectPicker.js";
 
 interface BulkBarProps {
   projects: Project[];
@@ -48,6 +51,11 @@ export function BulkBar({ projects }: BulkBarProps) {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [failures, setFailures] = useState<number>(0);
   const isProcessing = progress !== null;
+
+  // Sprint I.6.4 — Bulk Move state. ProjectPicker anchors to the Move
+  // button; opens on click, closes on pick / Esc / outside click.
+  const [pickerOpen, setPickerOpen] = useState<boolean>(false);
+  const moveBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // Resolve selected ids → full Task objects + their tasksPath.
   const selectedEntries = useMemo(() => {
@@ -377,6 +385,187 @@ export function BulkBar({ projects }: BulkBarProps) {
     }
   }
 
+  /**
+   * Sprint I.6.4 — Bulk Move to another project.
+   *
+   * Handles entity tasks only. Inline tasks in the selection are counted
+   * as "skipped" (failures) with clear label language. (Rationale: moving
+   * an inline checkbox line across project tasks.md files is better done
+   * via the existing per-task promote→move flow; bulk flow optimizes the
+   * common case of selecting entity tasks and relocating them.)
+   *
+   * B6 preempt (v2-handoff §5.4 / HANDOFF §5):
+   *   - `restoreFocusBeforeUnmount()` MUST be called before `clearSelection()`
+   *     so focus doesn't drop to <body> when the bulk bar unmounts.
+   *   - On partial failure the secondary feedback toast MUST emit
+   *     `terminal: true` so UndoToast omits its Undo button. Mirrors the
+   *     Sprint H R2 UNDO-TOAST-TERMINAL-BTNS pattern from handleBulkDelete.
+   *
+   * Collision behavior: server auto-suffixes `-2`, `-3`, ... and returns
+   * `renamedFrom`/`renamedTo` on the move response. Label composition
+   * surfaces rename count transparency to the user.
+   *
+   * Undo: iterates successful moves in REVERSE and issues the opposite
+   * move (new path → original source slug). If the original-source slug
+   * itself now has a colliding filename at undo time, server auto-suffixes
+   * again — undo is best-effort but never data-destructive.
+   */
+  async function handleBulkMove(targetSlug: string): Promise<void> {
+    if (isProcessing) return;
+    const entries = selectedEntries;
+    if (entries.length === 0) return;
+
+    // Entity-only filter; inline tasks counted separately for label language.
+    // Use isEntityTask predicate so TS narrows `task` inside the loop below.
+    const entityEntries = entries.filter(
+      (e): e is typeof e & { task: Extract<Task, { source: "entity" }> } =>
+        isEntityTask(e.task),
+    );
+    const inlineSkipped = entries.length - entityEntries.length;
+
+    if (entityEntries.length === 0) {
+      // Nothing movable; surface a terminal feedback toast and clear.
+      setPendingUndo({
+        action: "delete", // closest existing action surface for "no-undo" feedback
+        taskIds: [],
+        entityPaths: [],
+        label:
+          inlineSkipped > 0
+            ? `${inlineSkipped} inline task${inlineSkipped === 1 ? "" : "s"} — promote before moving`
+            : "Nothing to move",
+        undoneAt: Date.now(),
+        revert: async () => { /* terminal feedback */ },
+        terminal: true,
+      });
+      restoreFocusBeforeUnmount();
+      clearSelection();
+      return;
+    }
+
+    setProgress({ done: 0, total: entityEntries.length });
+    setFailures(0);
+    let localFailures = 0;
+
+    try {
+      // Record per-task source slug + the ACTUAL moved path (which may
+      // include an auto-suffix from collision) so the undo closure can
+      // issue the reverse move.
+      interface MoveRecord {
+        origEntityPath: string;
+        origSourceSlug: string;
+        movedEntityPath: string;
+        renamedFrom?: string;
+        renamedTo?: string;
+      }
+      const moves: MoveRecord[] = [];
+      let renamedCount = 0;
+
+      for (let i = 0; i < entityEntries.length; i++) {
+        const { task } = entityEntries[i];
+        // TS-narrowed by isEntityTask filter predicate above — task.entityPath: string.
+        const origEntityPath = task.entityPath;
+        // Source slug from `<VAULT>/1-Projects/<slug>/tasks/<stem>.md`.
+        const srcMatch = origEntityPath.match(/1-Projects\/([^/]+)\/tasks\//);
+        const origSourceSlug = srcMatch ? srcMatch[1] : "";
+        try {
+          const r = await moveEntityTaskApi({ entityPath: origEntityPath, targetSlug });
+          if (r.ok && r.data.moved) {
+            moves.push({
+              origEntityPath,
+              origSourceSlug,
+              movedEntityPath: r.data.moved,
+              renamedFrom: r.data.renamedFrom,
+              renamedTo: r.data.renamedTo,
+            });
+            if (r.data.renamedTo) renamedCount++;
+          } else {
+            localFailures++;
+          }
+        } catch {
+          localFailures++;
+        }
+        setProgress({ done: i + 1, total: entityEntries.length });
+      }
+      setFailures(localFailures);
+
+      await refreshVault();
+
+      // ─── Label composition (I.6.5 transparency) ─────────────────────
+      const successCount = moves.length;
+      const parts: string[] = [];
+      if (successCount === 1) parts.push("1 task moved");
+      else if (successCount > 1) parts.push(`${successCount} tasks moved`);
+      if (renamedCount > 0) parts.push(`${renamedCount} renamed`);
+      if (localFailures > 0) parts.push(`${localFailures} failed`);
+      if (inlineSkipped > 0) parts.push(`${inlineSkipped} skipped`);
+      const label = parts.length > 0 ? parts.join(" · ") : "Nothing moved";
+
+      const hasAnyFailure = localFailures > 0 || inlineSkipped > 0;
+
+      if (successCount > 0) {
+        setPendingUndo({
+          action: "delete", // reuse undo surface — no dedicated "move" action yet
+          taskIds: entries.map((e) => e.task.id),
+          entityPaths: [],
+          label,
+          undoneAt: Date.now(),
+          revert: async () => {
+            // Reverse-iterate so the same-file conflict resolution the
+            // forward move did is unwound in inverse order.
+            let restored = 0;
+            for (let i = moves.length - 1; i >= 0; i--) {
+              const m = moves[i];
+              if (!m.origSourceSlug) continue;
+              try {
+                const r = await moveEntityTaskApi({
+                  entityPath: m.movedEntityPath,
+                  targetSlug: m.origSourceSlug,
+                });
+                if (r.ok) restored++;
+              } catch {
+                // per-move failure — continue; UI sees the survivors
+                // after the refresh below.
+              }
+            }
+            await refreshVault();
+            if (restored < moves.length) {
+              // B6 preempt — partial-undo surfaces a terminal-variant
+              // toast (no Undo button) mirroring handleBulkDelete.
+              setPendingUndo({
+                action: "delete",
+                taskIds: [],
+                entityPaths: [],
+                label: `Restored ${restored}/${moves.length} (others may have collided)`,
+                undoneAt: Date.now(),
+                revert: async () => { /* terminal feedback */ },
+                terminal: true,
+              });
+            }
+          },
+        });
+      } else if (hasAnyFailure) {
+        // All moves failed — emit a terminal feedback toast so the user
+        // sees WHY nothing happened, without a misleading Undo button.
+        setPendingUndo({
+          action: "delete",
+          taskIds: [],
+          entityPaths: [],
+          label,
+          undoneAt: Date.now(),
+          revert: async () => { /* terminal feedback */ },
+          terminal: true,
+        });
+      }
+
+      // B6 preempt (HANDOFF §5 iter-2): focus restore BEFORE clearSelection
+      // so the BulkBar's unmount doesn't drop focus to <body>.
+      restoreFocusBeforeUnmount();
+      clearSelection();
+    } finally {
+      setProgress(null);
+    }
+  }
+
   const countLabel = isProcessing
     ? `${progress!.done}/${progress!.total} done…`
     : `${selectedEntries.length} selected`;
@@ -399,6 +588,19 @@ export function BulkBar({ projects }: BulkBarProps) {
         >
           <CheckCircle2 size={12} strokeWidth={1.5} aria-hidden="true" />
           <span>Done</span>
+        </button>
+        <button
+          ref={moveBtnRef}
+          type="button"
+          className="bulk-bar__btn press-scale"
+          onClick={() => setPickerOpen((v) => !v)}
+          disabled={isProcessing}
+          title="Move all to…"
+          aria-haspopup="dialog"
+          aria-expanded={pickerOpen}
+        >
+          <FolderInput size={12} strokeWidth={1.5} aria-hidden="true" />
+          <span>Move</span>
         </button>
         <button
           type="button"
@@ -430,6 +632,24 @@ export function BulkBar({ projects }: BulkBarProps) {
           Clear
         </button>
       </div>
+      {pickerOpen && (
+        <ProjectPicker
+          anchorRef={moveBtnRef}
+          projects={projects}
+          excludeSlugs={Array.from(
+            new Set(
+              selectedEntries
+                .map((e) => e.project.slug)
+                .filter((s): s is string => typeof s === "string" && s.length > 0),
+            ),
+          )}
+          onPick={(slug) => {
+            setPickerOpen(false);
+            void handleBulkMove(slug);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
