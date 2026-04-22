@@ -3,7 +3,7 @@ import { Router } from "express";
 import { toggleTask } from "./writers/task-toggle.js";
 import { addTask } from "./writers/task-add.js";
 import { editTask } from "./writers/task-edit.js";
-import { moveTask } from "./writers/task-move.js";
+import { moveTask, moveEntityTask } from "./writers/task-move.js";
 import { editTaskField } from "./writers/task-field-edit.js";
 import { editTaskStatus } from "./writers/task-status-edit.js";
 import { createEntityTask } from "./writers/task-create-entity.js";
@@ -126,18 +126,41 @@ router.post("/tasks/edit", async (req: Request, res: Response) => {
 // ─── POST /api/tasks/move ────────────────────────────────────────────────────
 
 router.post("/tasks/move", async (req: Request, res: Response) => {
-  const { sourcePath, line, targetSlug } = req.body as Record<string, unknown>;
+  // Sprint I.6.1 — dual-shape request body. Inline: {sourcePath, line, targetSlug}.
+  // Entity:   {entityPath, targetSlug}. Discriminator is presence of `entityPath`.
+  const body = req.body as Record<string, unknown>;
+  const { entityPath, sourcePath, line, targetSlug } = body;
 
+  if (typeof targetSlug !== "string") {
+    res.status(400).json({ ok: false, error: "targetSlug must be a string" });
+    return;
+  }
+
+  // ─── Entity path ─────────────────────────────────────────────────────────
+  if (typeof entityPath === "string") {
+    try {
+      const result = await moveEntityTask({ entityPath, targetSlug });
+      res.json({
+        ok: true,
+        sourceSlug: result.sourceSlug,
+        targetSlug: result.targetSlug,
+        moved: result.moved,
+        ...(result.renamedFrom ? { renamedFrom: result.renamedFrom } : {}),
+        ...(result.renamedTo ? { renamedTo: result.renamedTo } : {}),
+      });
+    } catch (err) {
+      handleError(err, res);
+    }
+    return;
+  }
+
+  // ─── Inline path (original behavior) ─────────────────────────────────────
   if (typeof sourcePath !== "string") {
-    res.status(400).json({ ok: false, error: "sourcePath must be a string" });
+    res.status(400).json({ ok: false, error: "sourcePath must be a string (or provide entityPath for entity move)" });
     return;
   }
   if (typeof line !== "number") {
     res.status(400).json({ ok: false, error: "line must be a number" });
-    return;
-  }
-  if (typeof targetSlug !== "string") {
-    res.status(400).json({ ok: false, error: "targetSlug must be a string" });
     return;
   }
 

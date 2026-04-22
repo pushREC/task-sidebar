@@ -1,12 +1,25 @@
-import { readFile, stat } from "fs/promises";
+import { readFile, stat, unlink, mkdir } from "fs/promises";
 import { existsSync } from "fs";
-import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
-import { writeFileAtomic } from "./atomic.js";
+import { basename, join } from "path";
+import matter from "gray-matter";
+import { VAULT_ROOT, assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
+import { writeFileAtomic, writeFileExclusive } from "./atomic.js";
 import { addTask } from "./task-add.js";
 import { extractSlug } from "./slug.js";
-import { invalidateFile } from "../vault-cache.js";
+import { invalidateFile, invalidateProject } from "../vault-cache.js";
 
 const TASK_LINE_RE = /^(\s*)- \[([ xX])\]\s+(.+)$/;
+
+// Sprint I.6.1 — entity-move path regex for slug extraction from full absolute path.
+// Expects `<VAULT_ROOT>/1-Projects/<slug>/tasks/<stem>.md` (matches ENTITY_TASK_PATH_RE
+// in safety.ts). Captures sourceSlug + stem. Safety validation is handled upstream by
+// `assertSafeTasksPath` (which enforces this exact shape) — this regex only parses.
+const ENTITY_PATH_SLUG_RE = /\/1-Projects\/([^/]+)\/tasks\/([^/]+)\.md$/;
+
+// Sprint I.6.1 — pathological-collision cap. If 99 tasks with the same stem already
+// exist at target, further auto-suffix is a sign of either user error or a bug loop;
+// surface 409 rather than iterating unbounded.
+const MAX_COLLISION_SUFFIX = 99;
 
 export interface MoveTaskInput {
   sourcePath: string;
@@ -17,6 +30,20 @@ export interface MoveTaskInput {
 export interface MoveTaskResult {
   sourceSlug: string;
   targetSlug: string;
+}
+
+// Sprint I.6.1 — entity-move inputs + result
+export interface MoveEntityTaskInput {
+  entityPath: string;   // vault-relative `1-Projects/<slug>/tasks/<stem>.md` or absolute
+  targetSlug: string;
+}
+
+export interface MoveEntityTaskResult {
+  sourceSlug: string;
+  targetSlug: string;
+  moved: string;         // vault-relative final path, e.g. "1-Projects/<targetSlug>/tasks/<finalStem>.md"
+  renamedFrom?: string;  // original stem, present only if collision auto-suffix was applied
+  renamedTo?: string;    // suffixed stem (e.g. "foo-2")
 }
 
 /**
@@ -161,6 +188,175 @@ export async function moveTask(input: MoveTaskInput): Promise<MoveTaskResult> {
   }
 
   return { sourceSlug, targetSlug };
+}
+
+/**
+ * Sprint I.6.1 — Entity-task move across projects.
+ *
+ * Moves an entity task file from `1-Projects/<sourceSlug>/tasks/<stem>.md` to
+ * `1-Projects/<targetSlug>/tasks/<finalStem>.md` with four invariants:
+ *
+ * 1. **Atomic cutover**: write target first via O_EXCL (`writeFileExclusive`),
+ *    THEN unlink source. A race with a concurrent writer on target produces
+ *    EEXIST → auto-suffix retry. A failure mid-flight leaves the source intact
+ *    (not data-destructive) — user sees an error, can retry.
+ * 2. **Frontmatter rewrite**: `parent-project` is updated to point at target's
+ *    README before the O_EXCL write, so the target file lands in a consistent
+ *    state. gray-matter round-trip preserves ordering of other fields.
+ * 3. **Collision auto-suffix**: if target stem is taken, append `-2`, `-3`, …
+ *    up to `-${MAX_COLLISION_SUFFIX}`. Caller sees `{renamedFrom, renamedTo}`
+ *    in response so the UI can surface transparency (toast copy).
+ * 4. **Dual-slug invalidation BEFORE response**: both `sourceSlug` and
+ *    `targetSlug` caches are invalidated synchronously so the very next
+ *    `/api/vault` call returns a coherent state (writer-sync invariant, plan
+ *    §0.4 Decision 7).
+ *
+ * Non-goals:
+ * - This function does NOT emit SSE broadcasts. Caller (route handler) does that.
+ * - This function does NOT rename arbitrary non-task files — strict entity-path
+ *   shape enforced by `assertSafeTasksPath`.
+ */
+export async function moveEntityTask(
+  input: MoveEntityTaskInput,
+): Promise<MoveEntityTaskResult> {
+  const { targetSlug } = input;
+
+  // ─── Input validation (targetSlug) ─────────────────────────────────────
+  if (!targetSlug || typeof targetSlug !== "string") {
+    throw safetyError("targetSlug must be a non-empty string", 400);
+  }
+  if (targetSlug.includes("..") || targetSlug.includes("/") || targetSlug.includes("\0")) {
+    throw safetyError("targetSlug contains illegal characters", 403);
+  }
+
+  // ─── Resolve + validate source ─────────────────────────────────────────
+  const sourceAbs = resolveTasksPath(input.entityPath);
+  assertSafeTasksPath(sourceAbs);
+
+  if (!existsSync(sourceAbs)) {
+    throw safetyError(`entity task not found: ${input.entityPath}`, 404);
+  }
+
+  // Extract sourceSlug + stem from the validated absolute path.
+  const match = ENTITY_PATH_SLUG_RE.exec(sourceAbs);
+  if (!match) {
+    // Should be unreachable if assertSafeTasksPath matched ENTITY_TASK_PATH_RE,
+    // but surface a clear error rather than silently treat as inline.
+    throw safetyError(
+      `entityPath does not match expected shape 1-Projects/<slug>/tasks/<stem>.md: ${input.entityPath}`,
+      400,
+    );
+  }
+  const sourceSlug = match[1];
+  const originalStem = match[2];
+
+  // Reject same-slug move (no-op but potentially destructive if collision
+  // logic would overwrite itself — explicit guard).
+  if (sourceSlug === targetSlug) {
+    throw safetyError(
+      `sourceSlug and targetSlug are identical (${sourceSlug}); move would be a no-op`,
+      400,
+    );
+  }
+
+  // ─── Build target dir + ensure it exists ───────────────────────────────
+  const targetDir = join(VAULT_ROOT, "1-Projects", targetSlug, "tasks");
+  // mkdir -p is idempotent; safe if target project already has tasks/ dir.
+  // If target project doesn't exist at all, this creates the tasks/ subtree —
+  // but the project's README is the source-of-truth for existence, not this
+  // directory. If the user moves a task into a non-existent target, they'll
+  // see a "no such project" elsewhere in the app. We don't gate here because
+  // the caller (BulkBar ProjectPicker) enumerates existing projects only.
+  await mkdir(targetDir, { recursive: true });
+
+  // ─── Collision auto-suffix ─────────────────────────────────────────────
+  // Try `<stem>.md`, then `<stem>-2.md`, `<stem>-3.md`, … up to MAX.
+  // existsSync check is a TOCTOU hint, NOT a lock — the actual atomicity
+  // comes from writeFileExclusive (O_EXCL) below. A concurrent writer
+  // landing at our chosen candidate will cause writeFileExclusive to throw
+  // 409 EEXIST, and we retry on the next suffix.
+  let finalStem = originalStem;
+  let targetAbs = join(targetDir, `${finalStem}.md`);
+  assertSafeTasksPath(targetAbs);
+
+  for (let suffix = 2; existsSync(targetAbs) && suffix <= MAX_COLLISION_SUFFIX + 1; suffix++) {
+    if (suffix > MAX_COLLISION_SUFFIX) {
+      throw safetyError(
+        `collision auto-suffix exceeded ${MAX_COLLISION_SUFFIX} for stem '${originalStem}' in target '${targetSlug}'. Rename manually before retry.`,
+        409,
+      );
+    }
+    finalStem = `${originalStem}-${suffix}`;
+    targetAbs = join(targetDir, `${finalStem}.md`);
+    assertSafeTasksPath(targetAbs);
+  }
+
+  const renamed = finalStem !== originalStem;
+
+  // ─── Read source + rewrite parent-project frontmatter ──────────────────
+  const raw = await readFile(sourceAbs, "utf8");
+  const parsed = matter(raw);
+  parsed.data["parent-project"] = `[[1-Projects/${targetSlug}/README]]`;
+  const rewritten = matter.stringify(parsed.content, parsed.data);
+
+  // ─── Atomic cutover: write target (O_EXCL), THEN unlink source ─────────
+  //
+  // Order rationale: if we unlinked source first and then write-to-target
+  // failed, we'd lose the task. Writing target first means source stays
+  // intact until we successfully persist target; worst case is a duplicate,
+  // not data loss.
+  //
+  // O_EXCL protects against another writer racing us to the same target
+  // path between our existsSync probe and our write. On EEXIST we throw
+  // 409 (caller can retry — picking a different target or re-trying with
+  // fresh suffix). We do NOT retry inside this function because the race
+  // is rare and surfacing the error preserves caller control.
+  try {
+    await writeFileExclusive(targetAbs, rewritten);
+  } catch (writeErr) {
+    // writeFileExclusive already wraps EEXIST as a 409 SafetyError. Any
+    // other error (disk full, permission) propagates as-is. Nothing has
+    // committed on the source side, so no rollback needed.
+    throw writeErr;
+  }
+
+  // Target is safely on disk with the rewritten parent-project. Now unlink
+  // source. If unlink fails, we have a duplicate — log the compound error
+  // but do NOT roll back target (user-visible data loss would be worse).
+  try {
+    await unlink(sourceAbs);
+  } catch (unlinkErr) {
+    const msg = unlinkErr instanceof Error ? unlinkErr.message : String(unlinkErr);
+    // Invalidate target so the duplicate is visible to the UI at least.
+    try {
+      await invalidateProject(targetSlug);
+    } catch {
+      // Ignore — we're already in an error path.
+    }
+    throw safetyError(
+      `moveEntityTask: target ${targetAbs} written successfully but failed to remove source ${sourceAbs} (${msg}). Manual cleanup required — task now exists in BOTH projects.`,
+      500,
+    );
+  }
+
+  // ─── Dual-slug invalidation BEFORE response (writer-sync invariant) ────
+  // plan §0.4 Decision 7 / preempt B5. Invalidate source first so a
+  // concurrent reader hitting source's stale cache doesn't see the moved
+  // task still present; then target so the moved task appears in its new
+  // home. Both calls are awaited — no fire-and-forget.
+  await invalidateProject(sourceSlug);
+  await invalidateProject(targetSlug);
+
+  // ─── Build vault-relative `moved` path (lock #7) ───────────────────────
+  const moved = `1-Projects/${targetSlug}/tasks/${basename(targetAbs)}`;
+
+  return {
+    sourceSlug,
+    targetSlug,
+    moved,
+    renamedFrom: renamed ? originalStem : undefined,
+    renamedTo: renamed ? finalStem : undefined,
+  };
 }
 
 /**
