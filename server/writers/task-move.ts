@@ -1,4 +1,4 @@
-import { readFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import { existsSync } from "fs";
 import { assertSafeTasksPath, resolveTasksPath, safetyError } from "../safety.js";
 import { writeFileAtomic } from "./atomic.js";
@@ -95,6 +95,23 @@ export async function moveTask(input: MoveTaskInput): Promise<MoveTaskResult> {
   // Write source atomically first — before touching the target
   await writeFileAtomic(sourcePath, cleaned.join("\n"));
 
+  // Sprint I.9 R2 — Codex MOVE-ROLLBACK-CLOBBERS-SOURCE (MEDIUM): capture
+  // the mtime right AFTER our write commits. On rollback, we verify the
+  // source file still has this exact mtime before restoring. If a concurrent
+  // writer has since edited the source, mtime differs → we surface a
+  // "concurrent edit" error instead of blindly clobbering their work.
+  // writeFileAtomic uses tmp+rename so mtime is set at rename time and is
+  // deterministic per-write.
+  let postWriteMtimeMs: number;
+  try {
+    postWriteMtimeMs = (await stat(sourcePath)).mtimeMs;
+  } catch {
+    // stat failure is unexpected (we just wrote the file) but not fatal for
+    // the happy path — use 0 as a sentinel so a later mtime check fails
+    // defensively (prefer throwing "concurrent edit" over blind clobber).
+    postWriteMtimeMs = 0;
+  }
+
   // Sprint I.4.6 — invalidate source project cache BEFORE addTask
   // touches target (addTask's own invalidate covers targetSlug).
   // Keeps the vault-cache consistent during the cross-project move.
@@ -106,17 +123,32 @@ export async function moveTask(input: MoveTaskInput): Promise<MoveTaskResult> {
   // (I.4.4 wire-in), so we don't need a second invalidateProject here.
   //
   // On failure, compensate by restoring source to its pre-move state so
-  // the user's task is not silently destroyed. If restore itself fails,
-  // surface a compound error describing BOTH the target write failure
-  // AND the source restore failure — the caller can log + bubble a 500.
+  // the user's task is not silently destroyed. Rollback is mtime-guarded
+  // (R2) — if another writer landed in the source meanwhile, we surface
+  // a conflict instead of blindly overwriting their edit.
   try {
     await addTask({ slug: targetSlug, text: extractedText, section: "open" });
   } catch (addErr) {
+    // Verify source mtime hasn't changed since our write. If it has, a
+    // concurrent edit landed — we can't safely restore.
+    let currentMtimeMs: number | null = null;
+    try {
+      currentMtimeMs = (await stat(sourcePath)).mtimeMs;
+    } catch {
+      currentMtimeMs = null;
+    }
+    const addMsg = addErr instanceof Error ? addErr.message : String(addErr);
+    if (currentMtimeMs === null || currentMtimeMs !== postWriteMtimeMs) {
+      throw safetyError(
+        `task-move failed to add to target (${addMsg}) AND source file ${sourcePath} was modified by another writer between our removal and this failure. Manual review required — task may be in inconsistent state.`,
+        500,
+      );
+    }
+    // Safe to restore: mtime unchanged → no concurrent edit.
     try {
       await writeFileAtomic(sourcePath, originalSourceContent);
       await invalidateFile(sourcePath);
     } catch (restoreErr) {
-      const addMsg = addErr instanceof Error ? addErr.message : String(addErr);
       const restoreMsg = restoreErr instanceof Error ? restoreErr.message : String(restoreErr);
       throw safetyError(
         `task-move failed to add to target (${addMsg}) AND failed to restore source (${restoreMsg}). Task may be in inconsistent state — check ${sourcePath}.`,

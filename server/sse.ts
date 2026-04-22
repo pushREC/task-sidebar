@@ -104,13 +104,18 @@ function flush(): void {
 }
 
 export function broadcast(event: VaultChangedEvent): void {
-  // Accumulate every slug observed in the window. The widened
-  // `slugs` input is carried through intact; single-slug inputs
-  // are added individually. Dedup is intrinsic to Set semantics.
+  // Accumulate every slug observed in the window. Dedup is intrinsic to
+  // Set semantics.
+  //
+  // Sprint I.9 R2 — Codex SSE-MIXED-SLUG-DROP (LOW): prior version used
+  // either-or branches, silently dropping `event.slug` whenever `event.slugs`
+  // was also defined. The VaultChangedEvent shape doesn't mark those fields
+  // mutually exclusive, so a mixed payload like `{slug:"x", slugs:["a","b"]}`
+  // would lose "x". Fix: always union both fields into the accumulator. The
+  // Set dedup makes overlap harmless.
+  pendingSlugs.add(event.slug);
   if (event.slugs !== undefined) {
     for (const s of event.slugs) pendingSlugs.add(s);
-  } else {
-    pendingSlugs.add(event.slug);
   }
   if (coalesceTimer !== null) return; // already scheduled; trailing edge will flush
   coalesceTimer = setTimeout(flush, COALESCE_MS);

@@ -140,6 +140,17 @@ export async function buildInitial(): Promise<void> {
  *     stale gens, so sanity-rebuild can't clobber fresh cache (Opus P5
  *     CRITICAL).
  */
+// Sprint I.9 R2 — Codex CACHE-DIRTY-STARVATION (HIGH): under pathological
+// continuous-invalidate pressure (writer arrives during every rebuild
+// window), the do-while dirty loop could theoretically never terminate,
+// leaving rebuildInFlight unresolved and starving waiting callers. Cap the
+// loop at MAX_REBUILD_ITERATIONS; if exceeded, log a warning and exit —
+// the next invalidate or the 60s sanity-rebuild timer will catch any residual
+// staleness. In practice vault-sidebar's user-driven load is 1-2 invalidates/sec
+// with 18ms rebuilds, so the cap is belt-and-suspenders, never hit under
+// realistic use.
+const MAX_REBUILD_ITERATIONS = 10;
+
 export async function invalidateProject(_slug: string): Promise<void> {
   if (rebuildInFlight) {
     // Mark dirty so the current rebuild schedules a follow-up after
@@ -152,11 +163,21 @@ export async function invalidateProject(_slug: string): Promise<void> {
   }
   rebuildInFlight = (async () => {
     try {
+      let iterations = 0;
       do {
         dirty = false;
         const gen = ++latestStartedGeneration;
         const next = await buildVaultIndex();
         setCache(next, gen);
+        iterations++;
+        if (iterations >= MAX_REBUILD_ITERATIONS && dirty) {
+          process.stderr.write(
+            `[vault-cache] invalidateProject hit MAX_REBUILD_ITERATIONS=${MAX_REBUILD_ITERATIONS} ` +
+            `with dirty still set; bailing to let sanity-rebuild catch residual staleness. ` +
+            `This indicates unusually heavy write pressure.\n`,
+          );
+          break;
+        }
       } while (dirty);
     } finally {
       rebuildInFlight = null;
@@ -200,10 +221,22 @@ export async function invalidateFile(path: string): Promise<void> {
     await invalidateProject(m[1]);
   } catch (err) {
     process.stderr.write(`[vault-cache] invalidateFile failed for ${path}: ${err}\n`);
-    // Also mark dirty so next invalidate runs a follow-up (defensive —
-    // if we're mid-rebuild, dirty ensures a retry at the next writer's
-    // invalidate OR at the next sanity-rebuild tick).
+    // Sprint I.9 R2 — Codex CACHE-FAILURE-STAYS-STALE (HIGH): if a rebuild
+    // is already in flight, marking dirty=true is sufficient — the current
+    // rebuild's do-while loop will pick it up. But if NO rebuild is active,
+    // dirty=true alone is inert until some later invalidate or the 60s
+    // sanity-rebuild timer. Under the writer-synchronous invariant, the
+    // writer's file mutation is already durable; we MUST close the cache-
+    // vs-disk gap quickly. Kick a background retry on the next tick so a
+    // recoverable error (transient parse, momentary disk hiccup) doesn't
+    // leave the cache visibly stale for up to 60s.
     dirty = true;
+    if (rebuildInFlight === null) {
+      setTimeout(() => {
+        // Fire-and-forget; any error is re-logged by this call's own catch.
+        void invalidateProject("_retry_").catch(() => { /* suppressed */ });
+      }, 100);
+    }
   }
 }
 
