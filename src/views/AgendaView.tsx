@@ -134,10 +134,19 @@ export function AgendaView({ projects }: AgendaViewProps) {
               // scales with VISIBLE rows only. Panel div stays mounted for
               // aria-controls resolution (BucketHeader references panelId).
               // Preempt B3: QuickAdd remains at App.tsx level (unchanged).
+              //
+              // Sprint I.9 R1 — Gemini AGENDAVIEW-EMPTY-LIST-ROLE-ON-COLLAPSE
+              // (LOW): role="list" is applied ONLY when the list is expanded
+              // (has visible listitem children). A collapsed bucket has zero
+              // listitems in the DOM (lazy-mount), so declaring role="list"
+              // would violate the ARIA "list must contain listitems" rule on
+              // screen readers that don't fully respect `hidden` → aria-hidden
+              // (older NVDA+Firefox). Conditional role sidesteps the violation
+              // without regressing expanded-state semantics.
               <div
                 id={panelId}
                 className="bucket-body"
-                role="list"
+                role={collapsed ? undefined : "list"}
                 aria-labelledby={headingId}
                 hidden={collapsed}
               >

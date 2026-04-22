@@ -2,6 +2,28 @@ import chokidar, { type FSWatcher } from "chokidar";
 import { join } from "path";
 import { VAULT_ROOT } from "./safety.js";
 
+/**
+ * Sprint I.9 R1 — Opus P12 WATCHER-INVALIDATE-BROADCAST-TIMING (LOW) doc note:
+ *
+ * This watcher is a SAFETY NET for external changes (Obsidian edits, git
+ * pulls, manual file edits) — it is NOT the primary cache invalidation path.
+ * All in-process writers call `invalidateFile(absPath)` SYNCHRONOUSLY before
+ * broadcasting their SSE event (plan §0.4 Decision 7 hard invariant). That
+ * guarantees the client refetch after a writer-originated change sees the
+ * fresh cache.
+ *
+ * When chokidar fires for an EXTERNAL change, the handler passed to
+ * `startWatcher()` is expected to call `invalidateFile(absPath)` itself
+ * before calling `broadcast()`. The 150ms debounce window here coalesces
+ * rapid filesystem events (Obsidian frequently fires two events per save),
+ * so the caller's invalidate → broadcast chain runs AT MOST once per 150ms
+ * per slug. Combined with the 100ms SSE coalesce window (server/sse.ts),
+ * worst-case external-change → broadcast latency is 150+100 = 250ms.
+ *
+ * This file intentionally does NOT call invalidateFile/broadcast directly —
+ * those are the caller's responsibility — keeping this module a pure event
+ * source that any consumer can wire into their own cache layer.
+ */
 const PROJECTS_DIR = join(VAULT_ROOT, "1-Projects");
 
 // chokidar v5 dropped glob expansion — watch the directory with depth:2 to reach tasks/*.md
