@@ -423,6 +423,12 @@ export function BulkBar({ projects }: BulkBarProps) {
     );
     const inlineSkipped = entries.length - entityEntries.length;
 
+    // Sprint I.6.5 — resolve target title for label transparency. Falls
+    // back to slug if the target project isn't in our projects snapshot
+    // (possible if the picker used stale data — rare).
+    const targetProject = projects.find((p) => p.slug === targetSlug);
+    const targetLabel = targetProject?.title ?? targetSlug;
+
     if (entityEntries.length === 0) {
       // Nothing movable; surface a terminal feedback toast and clear.
       setPendingUndo({
@@ -491,10 +497,16 @@ export function BulkBar({ projects }: BulkBarProps) {
       await refreshVault();
 
       // ─── Label composition (I.6.5 transparency) ─────────────────────
+      // Template (v2 handoff §5.5):
+      //   "N tasks moved to <TARGET-TITLE> · M renamed · P failed · Q skipped"
+      // Singular "1 task moved to <TARGET-TITLE>" for single-task moves.
+      // Rename / failure / skipped clauses omitted when zero.
+      // Emits via pendingUndo.label — UndoToast appends the Undo button
+      // itself, so we don't include " · Undo" here.
       const successCount = moves.length;
       const parts: string[] = [];
-      if (successCount === 1) parts.push("1 task moved");
-      else if (successCount > 1) parts.push(`${successCount} tasks moved`);
+      if (successCount === 1) parts.push(`1 task moved to ${targetLabel}`);
+      else if (successCount > 1) parts.push(`${successCount} tasks moved to ${targetLabel}`);
       if (renamedCount > 0) parts.push(`${renamedCount} renamed`);
       if (localFailures > 0) parts.push(`${localFailures} failed`);
       if (inlineSkipped > 0) parts.push(`${inlineSkipped} skipped`);
