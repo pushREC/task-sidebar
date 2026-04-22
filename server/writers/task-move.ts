@@ -269,66 +269,137 @@ export async function moveEntityTask(
   // the caller (BulkBar ProjectPicker) enumerates existing projects only.
   await mkdir(targetDir, { recursive: true });
 
-  // ─── Collision auto-suffix ─────────────────────────────────────────────
-  // Try `<stem>.md`, then `<stem>-2.md`, `<stem>-3.md`, … up to MAX.
-  // existsSync check is a TOCTOU hint, NOT a lock — the actual atomicity
-  // comes from writeFileExclusive (O_EXCL) below. A concurrent writer
-  // landing at our chosen candidate will cause writeFileExclusive to throw
-  // 409 EEXIST, and we retry on the next suffix.
+  // ─── Read source + capture source mtime BEFORE write ──────────────────
+  // Sprint I.6 R1 Codex BULKMOVE-SOURCE-EDIT-LOSS (HIGH): the source file
+  // can be edited by another writer (body-edit / field-edit / status-edit)
+  // between our read and our unlink. Without checking, the stale snapshot
+  // lands at target AND the newer source version is deleted — silent data
+  // loss. Capture mtime here and re-stat immediately before unlink.
+  const raw = await readFile(sourceAbs, "utf8");
+  const sourceStatBefore = await stat(sourceAbs);
+  const sourceMtimeBefore = sourceStatBefore.mtimeMs;
+
+  const parsed = matter(raw);
+  parsed.data["parent-project"] = `[[1-Projects/${targetSlug}/README]]`;
+  const rewritten = matter.stringify(parsed.content, parsed.data);
+
+  // ─── Collision auto-suffix with EEXIST retry ───────────────────────────
+  // Sprint I.6 R1 Opus COLLISION-TOCTOU-NO-TRANSPARENT-RETRY (HIGH) +
+  // Codex BULKMOVE-EEXIST-NO-RETRY (MEDIUM): existsSync pre-probe is a
+  // hint, NOT a lock. A concurrent writer can land at our chosen suffix
+  // between probe and write, causing writeFileExclusive to throw EEXIST.
+  // Previous code surfaced 409 immediately; fix wraps writeFileExclusive
+  // INSIDE the suffix loop and advances to the next suffix on EEXIST.
+  //
+  // Order rationale (unchanged): write target O_EXCL → unlink source. If
+  // target write fails, source is intact (no data loss). If unlink fails,
+  // duplicate is visible + logged as compound 500.
   let finalStem = originalStem;
   let targetAbs = join(targetDir, `${finalStem}.md`);
-  assertSafeTasksPath(targetAbs);
+  let wroteTarget = false;
+  let lastWriteErr: unknown = null;
 
-  for (let suffix = 2; existsSync(targetAbs) && suffix <= MAX_COLLISION_SUFFIX + 1; suffix++) {
+  for (let suffix = 1; suffix <= MAX_COLLISION_SUFFIX + 1; suffix++) {
+    // suffix===1 uses originalStem; suffix===2+ uses `${originalStem}-${suffix}`.
+    if (suffix > 1) {
+      finalStem = `${originalStem}-${suffix}`;
+      targetAbs = join(targetDir, `${finalStem}.md`);
+    }
     if (suffix > MAX_COLLISION_SUFFIX) {
       throw safetyError(
         `collision auto-suffix exceeded ${MAX_COLLISION_SUFFIX} for stem '${originalStem}' in target '${targetSlug}'. Rename manually before retry.`,
         409,
       );
     }
-    finalStem = `${originalStem}-${suffix}`;
-    targetAbs = join(targetDir, `${finalStem}.md`);
     assertSafeTasksPath(targetAbs);
+    try {
+      await writeFileExclusive(targetAbs, rewritten);
+      wroteTarget = true;
+      break;
+    } catch (writeErr) {
+      // writeFileExclusive wraps EEXIST as a 409 SafetyError. Detect that
+      // specifically and advance to next suffix. Any OTHER error (ENOSPC,
+      // EACCES, etc.) propagates immediately — nothing committed on source
+      // side yet, no rollback needed.
+      const is409Eexist =
+        writeErr !== null &&
+        typeof writeErr === "object" &&
+        "statusCode" in writeErr &&
+        (writeErr as { statusCode?: number }).statusCode === 409;
+      if (!is409Eexist) {
+        throw writeErr;
+      }
+      lastWriteErr = writeErr;
+      // Loop continues — next iteration advances suffix.
+    }
+  }
+
+  if (!wroteTarget) {
+    // Should be unreachable (loop either breaks on success or throws on MAX
+    // exceeded), but surface defensively.
+    throw safetyError(
+      `moveEntityTask: no writable target found for '${originalStem}' in '${targetSlug}' (last error: ${String(lastWriteErr)})`,
+      409,
+    );
   }
 
   const renamed = finalStem !== originalStem;
 
-  // ─── Read source + rewrite parent-project frontmatter ──────────────────
-  const raw = await readFile(sourceAbs, "utf8");
-  const parsed = matter(raw);
-  parsed.data["parent-project"] = `[[1-Projects/${targetSlug}/README]]`;
-  const rewritten = matter.stringify(parsed.content, parsed.data);
-
-  // ─── Atomic cutover: write target (O_EXCL), THEN unlink source ─────────
-  //
-  // Order rationale: if we unlinked source first and then write-to-target
-  // failed, we'd lose the task. Writing target first means source stays
-  // intact until we successfully persist target; worst case is a duplicate,
-  // not data loss.
-  //
-  // O_EXCL protects against another writer racing us to the same target
-  // path between our existsSync probe and our write. On EEXIST we throw
-  // 409 (caller can retry — picking a different target or re-trying with
-  // fresh suffix). We do NOT retry inside this function because the race
-  // is rare and surfacing the error preserves caller control.
+  // ─── Pre-unlink source mtime re-check (concurrent-edit guard) ──────────
+  // Sprint I.6 R1 Codex BULKMOVE-SOURCE-EDIT-LOSS (HIGH): if the source's
+  // mtime has advanced since we snapshotted, a concurrent writer landed
+  // their newer version. Aborting protects that work. We also unlink the
+  // target we just wrote (best-effort) to avoid leaving an orphan stale
+  // copy under the new project. If target-unlink itself fails we log in
+  // the thrown error message — better than silently persisting both.
+  let sourceMtimeAfter: number;
   try {
-    await writeFileExclusive(targetAbs, rewritten);
-  } catch (writeErr) {
-    // writeFileExclusive already wraps EEXIST as a 409 SafetyError. Any
-    // other error (disk full, permission) propagates as-is. Nothing has
-    // committed on the source side, so no rollback needed.
-    throw writeErr;
+    sourceMtimeAfter = (await stat(sourceAbs)).mtimeMs;
+  } catch (statErr) {
+    // Source vanished between our read and our re-stat — treat as conflict.
+    sourceMtimeAfter = -1;
+    const statMsg = statErr instanceof Error ? statErr.message : String(statErr);
+    let cleanupSuffix = "";
+    try {
+      await unlink(targetAbs);
+    } catch (tgtErr) {
+      cleanupSuffix = ` (target cleanup also failed: ${tgtErr instanceof Error ? tgtErr.message : String(tgtErr)})`;
+    }
+    throw safetyError(
+      `moveEntityTask: source ${sourceAbs} disappeared mid-move (${statMsg}) — aborted. Target ${targetAbs} ${cleanupSuffix ? "orphaned" + cleanupSuffix : "was cleaned up"}.`,
+      409,
+    );
   }
 
-  // Target is safely on disk with the rewritten parent-project. Now unlink
-  // source. If unlink fails, we have a duplicate — log the compound error
-  // but do NOT roll back target (user-visible data loss would be worse).
+  if (sourceMtimeAfter !== sourceMtimeBefore) {
+    // Concurrent edit detected. Roll back: delete the target we wrote so
+    // the source's newer content stays authoritative in its original project.
+    let cleanupSuffix = "";
+    try {
+      await unlink(targetAbs);
+    } catch (tgtErr) {
+      cleanupSuffix = ` (target cleanup failed: ${tgtErr instanceof Error ? tgtErr.message : String(tgtErr)})`;
+    }
+    throw safetyError(
+      `moveEntityTask: source ${sourceAbs} was edited mid-move (mtime ${sourceMtimeBefore} → ${sourceMtimeAfter}). Move aborted to preserve newer edits. Target rolled back${cleanupSuffix}.`,
+      409,
+    );
+  }
+
+  // ─── Source unlink (mtime verified) ────────────────────────────────────
+  // If unlink fails, we have a duplicate — log the compound error but do
+  // NOT roll back target (user-visible data loss would be worse).
   try {
     await unlink(sourceAbs);
   } catch (unlinkErr) {
     const msg = unlinkErr instanceof Error ? unlinkErr.message : String(unlinkErr);
-    // Invalidate target so the duplicate is visible to the UI at least.
+    // Sprint I.6 R1 Opus UNLINK-FAIL-SOURCE-INVALIDATE-MISSING (CRITICAL):
+    // invalidate BOTH source AND target so the UI sees the duplicate
+    // consistently on next fetch (not just target). Source's cache would
+    // otherwise stay with the task still "present" until sanity-rebuild
+    // (60s) catches the missed invalidation.
     try {
+      await invalidateProject(sourceSlug);
       await invalidateProject(targetSlug);
     } catch {
       // Ignore — we're already in an error path.
