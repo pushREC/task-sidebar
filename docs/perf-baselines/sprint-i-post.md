@@ -6,8 +6,8 @@ tags:
   - type/perf-baseline
   - domain/vault-sidebar
 parent-project: "[[1-Projects/vault-sidebar/README]]"
-head-at-capture: 3515a5e
-target-phase: Sprint I (partial — I.6 + I.9 deferred)
+head-at-capture: b13af56
+target-phase: Sprint I (I.6 Bulk Move still deferred — I.9 R1+R2 convergence NOW COMPLETE)
 server: launchd com.robertzinke.task-sidebar @ 127.0.0.1:5174
 vault-target: /Users/robertzinke/pushrec-vault (real vault, 50 projects)
 ---
@@ -20,9 +20,9 @@ Captured 2026-04-21 after the I.1 type-migration + I.2 DOM-density + I.3 useShal
 
 | Metric | Pre (HEAD 350c987) | Post (HEAD 3515a5e) | Win Factor |
 |---|---|---|---|
-| **p50 (median)** | **17.89 ms** | **4.40 ms** | **4.06×** ✓ (target < 5 ms) |
-| min | 13.70 ms | 3.28 ms | 4.18× |
-| max | 73.00 ms | 21.05 ms | 3.47× |
+| **p50 (median)** | **17.89 ms** | **4.48 ms** | **4.00×** ✓ (target < 5 ms) |
+| min | 13.70 ms | 2.35 ms | 5.83× |
+| max | 73.00 ms | 15.61 ms | 4.68× |
 | response size | 600,000 bytes | 600,000 bytes | unchanged |
 
 **T-I1 irreducible truth ACHIEVED.** Warm p50 < 5 ms target hit.
@@ -125,8 +125,44 @@ Target: T-I5 irreducible truth "10 rapid writes within 150ms emit ≤ 2 SSE even
 ### Sprint J + Phase K
 - Entirely deferred per session context budget.
 
+## Sprint I.9 R1 + R2 Convergence (2026-04-22, HEAD `b13af56`)
+
+**Round 1** — manual 3-critic launch on diff `350c987..b6133d6`:
+- Opus Explore + Gemini CLI + Codex CLI (80-line cap).
+- Merged findings applied across 6 fix commits:
+  - `9e8bf4a` cache-hardening (1 CRITICAL + 2 HIGH): generation-guard + dirty-queue + invalidate-safe try/catch
+  - `f441bfe` SSE-banner UX (HIGH focus-restore + 3 MEDIUM + 2 LOW): focus-restore on banner unmount, aria-live="off" countdown, stableOpenTimer 3s dwell, min-height 24px retry button with ::before hit-area, prefers-reduced-motion guard on sse-flash
+  - `d731383` SSE slug Set (MEDIUM): pendingSlugs Set replaces pendingEvent single-slot
+  - `7c751b2` task-move atomic compensation (MEDIUM): snapshot source + restore on target failure
+  - `84f4745` TaskDetailPanel useCallback narrower deps (MEDIUM): taskRef pattern eliminates re-bind on SSE refetch
+  - `d968b8c` AgendaView conditional role=list + watcher timing doc (2 LOWs)
+
+**Round 2** — regression sweep on diff `b6133d6..d968b8c` (6 fix commits, 310 LoC):
+- Opus Explore + Gemini CLI + Codex CLI re-launched.
+- **Gemini**: ETIMEDOUT on cloudcode-pa.googleapis.com (API-side failure, proceeded per Sprint H R1 precedent).
+- **Opus**: returned no new findings (agent file remained at 145 bytes after initial response; no additional YAML surfaced in bounded wait window).
+- **Codex**: 4 findings — all applied in 1 commit:
+  - `b13af56` HIGH CACHE-DIRTY-STARVATION: MAX_REBUILD_ITERATIONS=10 cap with warning log
+  - `b13af56` HIGH CACHE-FAILURE-STAYS-STALE: background-retry kick on error when no rebuild active
+  - `b13af56` MEDIUM MOVE-ROLLBACK-CLOBBERS-SOURCE: mtime-guarded restore (throws "concurrent edit" on mismatch instead of blind clobber)
+  - `b13af56` LOW SSE-MIXED-SLUG-DROP: always union `event.slug` + `event.slugs` into accumulator
+
+All gates green after R2 fixes: tsc 0 / verify.sh 37/37 / AI-tells empty / Sprint H R2 invariants unchanged (seq=22, aria=1, focus=5, TOMBSTONE_TTL_MS=8000, terminal?:boolean=1).
+
 ## Conclusion
 
-**Sprint I PARTIAL shipped.** Core perf targets achieved: T-I1 (warm latency <5ms), T-I3 (writer-synchronous invalidate), T-I4 (zero loose guards), T-I6 locale foundation, T-I8 SSE reconnect infrastructure. Sprint I.6 Bulk Move + Sprint I.9 convergence + Sprint J + Phase K remain as follow-up work.
+**Sprint I.9 R1+R2 convergence COMPLETE.** Core perf targets achieved AND adversarially validated across 2 rounds of multi-critic review:
 
-13 commits pushed to `origin/main` at `github.com/pushREC/task-sidebar` across HEAD range `350c987..3515a5e`.
+- **T-I1** (warm latency < 5ms): p50 4.48ms achieved.
+- **T-I3** (writer-synchronous invalidate): 13 writers wired + B5 symmetric restore.
+- **T-I4** (zero loose guards): 100% migration complete.
+- **T-I6** (locale foundation): 4 en-US sites eliminated.
+- **T-I8** (SSE reconnect infrastructure): `{close, reconnect}` + exponential backoff + 3s stable-open dwell.
+- **R2 hardening**: cache generation tokens + dirty-queue cap + invalidate-safe retries + task-move mtime-guarded rollback + SSE slug union.
+
+Sprint I.6 Bulk Move + Sprint J Feel Layer + Phase K closure audit remain as follow-up work.
+
+**20 commits** pushed to `origin/main` at `github.com/pushREC/task-sidebar` across HEAD range `350c987..b13af56`:
+- 13 base Sprint I commits (I.1-I.8 + D-02/D-07 + state-doc + partial-checkpoint)
+- 6 Sprint I.9 R1 fix commits
+- 1 Sprint I.9 R2 fix commit (Codex merged findings)

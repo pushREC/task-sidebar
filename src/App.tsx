@@ -264,6 +264,17 @@ export function App() {
         clearTimeout(flashTimerRef.current);
         flashTimerRef.current = null;
       }
+      // Sprint I.9 R2 — Opus SSE-EFFECT-STABLEOPENREF-LEAK (HIGH): the 3s
+      // stable-open dwell timer (f441bfe) wasn't cleared on unmount. If
+      // the component unmounts within the 3s window after a successful
+      // open, the callback fires post-unmount attempting to write
+      // retryDelayMsRef. The write itself is safe (ref survives unmount)
+      // but the leaked timer is still wasteful and masks other bugs
+      // during development. Clear it alongside the other two.
+      if (stableOpenTimerRef.current !== null) {
+        clearTimeout(stableOpenTimerRef.current);
+        stableOpenTimerRef.current = null;
+      }
     };
     return cleanup;
   }, [loadVault]);  // R1 HIGH FIX — removed `vault` to prevent reconnect loop
