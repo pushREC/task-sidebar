@@ -186,26 +186,34 @@ export function ProjectPicker({
   }, [anchorRef]);
 
   // ─── Outside click + ancestor scroll + Escape ─────────────────────────
+  // Sprint I.6 R1 Gemini PICKER-FOCUS-LOSS-EXIT (MEDIUM): outside-click
+  // and ancestor-scroll close paths must restore focus to the anchor so
+  // keyboard users don't get stranded at <body>. Previously only the
+  // Escape path restored focus; now all three exit paths converge via
+  // the `closeAndRestoreFocus` helper.
   useEffect(() => {
+    function closeAndRestoreFocus() {
+      anchorRef.current?.focus();
+      onClose();
+    }
     function handleMouseDown(e: MouseEvent) {
       const pop = panelRef.current;
       const anchor = anchorRef.current;
       const target = e.target as Node;
       if (!pop) return;
       if (pop.contains(target) || anchor?.contains(target)) return;
-      onClose();
+      closeAndRestoreFocus();
     }
     function handleScroll(e: Event) {
       const pop = panelRef.current;
       if (pop && e.target instanceof Node && pop.contains(e.target)) return;
-      onClose();
+      closeAndRestoreFocus();
     }
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        onClose();
-        anchorRef.current?.focus();
+        closeAndRestoreFocus();
       }
     }
     document.addEventListener("mousedown", handleMouseDown);
@@ -249,6 +257,15 @@ export function ProjectPicker({
       e.preventDefault();
       const pick = results[activeIdx];
       if (pick) commitPick(pick.slug);
+    } else if (e.key === "Tab") {
+      // Sprint I.6 R1 Gemini PICKER-TAB-TRAP-MISSING (HIGH): input is
+      // the ONLY focusable inside the picker (options use
+      // aria-activedescendant, not real focus). Without this trap Tab
+      // lets focus escape into the underlying page / browser chrome,
+      // leaving keyboard users disoriented. Prevent default so Tab is
+      // a no-op while picker is open; user must Esc / Enter / click-
+      // outside to exit the picker's focus context.
+      e.preventDefault();
     }
     // Escape handled by window keydown (above) so all escape paths converge.
   }
