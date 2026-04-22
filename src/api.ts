@@ -99,6 +99,35 @@ export function moveTaskApi(args: {
   return postJson<MoveResult>("/api/tasks/move", args);
 }
 
+// Sprint I.6.2 — Bulk Move entity wrapper.
+//
+// Posts to the same `/api/tasks/move` endpoint as `moveTaskApi`, but the
+// server route dispatches on presence of `entityPath` (inline uses
+// `sourcePath`+`line`). Response carries the new vault-relative `moved`
+// path and optional `renamedFrom`/`renamedTo` stems when collision
+// auto-suffix fires at target.
+//
+// All callers (BulkBar bulk-move loop, future single-task move UI) MUST
+// thread `renamedFrom`/`renamedTo` into their undo/toast surfaces so the
+// user sees transparency about any auto-suffix (plan §0.3 D5).
+//
+// Timeout is inherited from `postJson` (AbortSignal.timeout(10000)).
+export interface MoveEntityResult {
+  ok: boolean;
+  sourceSlug?: string;
+  targetSlug?: string;
+  moved?: string;         // vault-relative final path, e.g. "1-Projects/<slug>/tasks/<stem>.md"
+  renamedFrom?: string;   // original stem (only when collision auto-suffix applied)
+  renamedTo?: string;     // suffixed stem (e.g. "foo-2")
+}
+
+export function moveEntityTaskApi(args: {
+  entityPath: string;
+  targetSlug: string;
+}): Promise<ApiResult<MoveEntityResult>> {
+  return postJson<MoveEntityResult>("/api/tasks/move", args);
+}
+
 // ─── v2.0 Write wrappers ──────────────────────────────────────────────────
 
 export interface FieldEditResult { ok: boolean }
