@@ -26,6 +26,20 @@ export interface MoveTaskResult {
  * 3. Calls addTask to append to the target project under ## Open.
  *
  * Both slugs are returned so the caller can broadcast two SSE events.
+ *
+ * Sprint I.9 R1 — Codex TASK-MOVE-NONATOMIC-PARTIAL-COMMIT (MEDIUM):
+ * previously, if `addTask` threw after the source rewrite had already
+ * committed to disk, the task would be GONE from source but NEVER
+ * inserted into target — silent user-visible data loss. Fix: snapshot
+ * the ORIGINAL source contents before rewriting; wrap `addTask` in
+ * try/catch and, on failure, restore source to its pre-move state
+ * AND re-invalidate the cache so the UI stays consistent with disk.
+ *
+ * The compensation is best-effort — if restoring source itself fails
+ * (e.g. disk full between original write and rollback), we surface the
+ * compound error so the caller's 5xx response reflects the true state.
+ * The alternative (silently succeeding with half-state) is strictly
+ * worse under the "ultimate snappiest" mandate.
  */
 export async function moveTask(input: MoveTaskInput): Promise<MoveTaskResult> {
   const { line, targetSlug } = input;
@@ -73,6 +87,11 @@ export async function moveTask(input: MoveTaskInput): Promise<MoveTaskResult> {
   // We only collapse consecutive blank lines — we never remove section headings.
   const cleaned = collapseConsecutiveBlanks(lines);
 
+  // Snapshot the ORIGINAL source contents so we can restore on target-side
+  // failure. Captured BEFORE the source rewrite commits to disk. Sprint I.9 R1
+  // Codex TASK-MOVE-NONATOMIC-PARTIAL-COMMIT.
+  const originalSourceContent = content;
+
   // Write source atomically first — before touching the target
   await writeFileAtomic(sourcePath, cleaned.join("\n"));
 
@@ -85,7 +104,29 @@ export async function moveTask(input: MoveTaskInput): Promise<MoveTaskResult> {
 
   // Add to target — addTask internally invalidates targetSlug's cache
   // (I.4.4 wire-in), so we don't need a second invalidateProject here.
-  await addTask({ slug: targetSlug, text: extractedText, section: "open" });
+  //
+  // On failure, compensate by restoring source to its pre-move state so
+  // the user's task is not silently destroyed. If restore itself fails,
+  // surface a compound error describing BOTH the target write failure
+  // AND the source restore failure — the caller can log + bubble a 500.
+  try {
+    await addTask({ slug: targetSlug, text: extractedText, section: "open" });
+  } catch (addErr) {
+    try {
+      await writeFileAtomic(sourcePath, originalSourceContent);
+      await invalidateFile(sourcePath);
+    } catch (restoreErr) {
+      const addMsg = addErr instanceof Error ? addErr.message : String(addErr);
+      const restoreMsg = restoreErr instanceof Error ? restoreErr.message : String(restoreErr);
+      throw safetyError(
+        `task-move failed to add to target (${addMsg}) AND failed to restore source (${restoreMsg}). Task may be in inconsistent state — check ${sourcePath}.`,
+        500,
+      );
+    }
+    // Source restored successfully. Re-throw the original target-side error
+    // so the caller sees the genuine failure cause.
+    throw addErr;
+  }
 
   return { sourceSlug, targetSlug };
 }
