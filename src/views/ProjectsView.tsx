@@ -201,7 +201,7 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
               // AgendaView's bucket-body which labels via bucket header id).
               // role="list" is the direct parent of TaskRow role="listitem".
               <div className="project-tasks" role="list" aria-labelledby={projectHeadingId}>
-                {openTasks.map((task) => (
+                {openTasks.map((task, idx) => (
                   <TaskRow
                     key={task.id}
                     task={task}
@@ -209,6 +209,9 @@ export function ProjectsView({ projects }: ProjectsViewProps) {
                     projects={projects}
                     indent
                     now={now}
+                    // Sprint J.1.1 — stagger-fade-in. Cap at 30 keeps
+                    // total stagger under 480ms even on huge projects.
+                    style={{ "--row-index": Math.min(idx, 30) } as React.CSSProperties}
                   />
                 ))}
               </div>

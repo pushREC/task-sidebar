@@ -29,6 +29,13 @@ interface TaskRowProps {
    * Projects view) so the parent ProjectsView doesn't have to plumb it.
    */
   now?: Date;
+  /**
+   * Sprint J.1.1 — inline style forwarded onto the wrapper div. Used
+   * by AgendaView + ProjectsView to set --row-index for stagger-fade
+   * mount animation. CSS variables on the wrapper cascade into the
+   * inner .task-row element where the animation rule is applied.
+   */
+  style?: React.CSSProperties;
 }
 
 // Sprint H.1 — 5s window (was 2s). Gives slow readers time to notice the
@@ -51,7 +58,7 @@ const RANK_PILL_VARIANT: Record<string, string> = {
   low: "p4",
 };
 
-export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: TaskRowProps) {
+export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style }: TaskRowProps) {
   const taskId = task.id.replace(/[^a-zA-Z0-9-_]/g, "_");
   const nowStamp = now ?? new Date();
   // Sprint I.3 — collapse 11 of 12 individual `useSidebarStore(s => s.X)`
@@ -520,6 +527,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now }: Tas
       data-task-wrapper
       role="listitem"
       aria-current={isSelected ? "true" : undefined}
+      style={style}
     >
       <div
         className={rowClasses}

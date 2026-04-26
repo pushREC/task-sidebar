@@ -206,6 +206,18 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
 /* Task list */
 .task-list { flex: 1; overflow-y: auto; padding: 8px 0; }
 
+/* Sprint J.1.1 — Stagger-fade row mount.
+   Each TaskRow fades in via opacity 0→1 + translateY 4px→0 over
+   var(--dur-fast)=140ms, with delay = row-index * 16ms (capped at 30
+   in the view layer so worst-case stagger is 30*16ms+140ms = 620ms).
+   `backwards` fill keeps opacity at 0 BEFORE delay elapses (no flash
+   of unstyled content). prefers-reduced-motion override below disables
+   animation entirely for vestibular-sensitive users. */
+@keyframes row-stagger-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .task-row {
   display: flex;
   align-items: flex-start;
@@ -221,6 +233,15 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
      behavior + scrollbar sizing stay correct before paint. */
   content-visibility: auto;
   contain-intrinsic-size: auto 40px;
+  /* Sprint J.1.1 — stagger-fade-in. --row-index is set inline by the
+     view layer (AgendaView, ProjectsView). Default 0 covers any row
+     rendered outside a stagger context (single-row edge cases). */
+  animation: row-stagger-in var(--dur-fast) var(--ease-standard)
+             calc(var(--row-index, 0) * 16ms) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Vestibular-accessibility: disable mount animation entirely. */
+  .task-row { animation: none; }
 }
 .task-row--indent { padding-left: 32px; }
 .task-row + .task-row::before,

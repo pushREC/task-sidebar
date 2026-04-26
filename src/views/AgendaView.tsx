@@ -158,6 +158,10 @@ export function AgendaView({ projects }: AgendaViewProps) {
                     tasksPath={t.projectTasksPath}
                     projects={projects}
                     now={now}
+                    // Sprint J.1.1 — stagger-fade-in: row-index drives
+                    // animation-delay (16ms * idx). Cap at 30 keeps the
+                    // total stagger under 480ms even on 100+ row buckets.
+                    style={{ "--row-index": Math.min(idx, 30) } as React.CSSProperties}
                   />
                 ))}
               </div>
