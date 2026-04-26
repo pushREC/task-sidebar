@@ -582,6 +582,13 @@ h3.group-header, .group-header {
 .skeleton-row {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 8px 16px;
+  /* Sprint J.2.12 — match the .task-row intrinsic 40px so the skeleton-to-
+     real-row swap produces no layout jump. Pair with the J.1.1 stagger-fade
+     on real rows for the crossfade illusion (skeleton fades in via skel-
+     fade-in below, then unmounts as real rows fade in at 0-360ms). The
+     prefers-reduced-motion block at file end zeroes out both animations. */
+  contain-intrinsic-size: auto 40px;
+  animation: skel-fade-in 200ms var(--ease-standard) backwards;
 }
 .skeleton-circle {
   flex-shrink: 0;
@@ -601,6 +608,16 @@ h3.group-header, .group-header {
 @keyframes shimmer {
   0%, 100% { background-color: var(--skeleton); }
   50%       { background-color: var(--skeleton-hi); }
+}
+
+/* Sprint J.2.12 — gentle fade-in on skeleton mount so the first paint
+   is not a hard pop. When real rows mount and unmount the skeleton,
+   J.1.1 row-stagger-in handles the entry — together they read as a
+   crossfade. backwards keeps the from-state applied during the
+   animation-delay window. */
+@keyframes skel-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* Empty state */
