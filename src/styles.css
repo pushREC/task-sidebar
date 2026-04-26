@@ -106,6 +106,38 @@
   --skeleton-hi: rgba(255, 255, 255, 0.08);
 }
 
+/* Sprint J.2.7 — prefers-contrast: more variant for WCAG AAA compliance.
+   When the OS-level "Increase Contrast" preference is active, push every
+   text/bg pair to >= 7:1 contrast ratio by maximizing text luminance,
+   strengthening separators, and shifting --accent toward higher legibility
+   (brighter red on dark, darker red on light). All other tokens (--bg,
+   --bg-surface, --bg-hover, etc.) inherit from the base theme so layout
+   pixel-positions stay byte-identical — only text + accent + separators
+   change. Architecture Lock #1 (Darkroom-Minimal aesthetic) is preserved:
+   single accent, low-chroma elsewhere, no new colors introduced. */
+@media (prefers-contrast: more) {
+  /* Dark themes: base :root + explicit dark + system-dark all map here. */
+  :root,
+  [data-theme="dark"] {
+    --text-primary: #ffffff;
+    --text-secondary: #e0e0e0;
+    --separator: rgba(255, 255, 255, 0.40);
+    --separator-strong: rgba(255, 255, 255, 0.80);
+    --accent: #ff6b5d;
+    --accent-dim: #d84a3e;
+  }
+  /* Light themes: explicit light + system-light fallback both map here. */
+  :root:not([data-theme="dark"]),
+  [data-theme="light"] {
+    --text-primary: #000000;
+    --text-secondary: #1a1917;
+    --separator: rgba(0, 0, 0, 0.50);
+    --separator-strong: rgba(0, 0, 0, 0.90);
+    --accent: #8a1f15;
+    --accent-dim: #6b1810;
+  }
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* C2 — Global focus-visible indicator (Darkroom-Minimal: 2px accent outline) */
