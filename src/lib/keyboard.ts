@@ -342,11 +342,22 @@ function jumpToTab(tab: ActiveTab, timerRef: TimerRef): void {
   // the same sanitized id in the new tab doesn't silently inherit expand.
   state.setExpandedTaskId(null);
   // Select the first task in the new view after a short render tick
+  // Sprint J.1.5 — also imperatively focus that row so document.activeElement
+  // ends up on it (not on the previous tab button or body). Wrap the focus
+  // call in another rAF so layout has settled after setSelectedTaskId
+  // re-rendered the row tree. Honors T-J3 irreducible truth (press 1, press 2
+  // → activeElement.dataset.taskRow set).
   timerRef.current = setTimeout(() => {
     timerRef.current = null;
     const ids = getVisibleTaskIds();
     if (ids.length > 0) {
       useSidebarStore.getState().setSelectedTaskId(ids[0]);
+      requestAnimationFrame(() => {
+        const row = document.querySelector<HTMLElement>(
+          `[data-task-row="${CSS.escape(ids[0])}"]`,
+        );
+        row?.focus();
+      });
     }
   }, 50);
 }
