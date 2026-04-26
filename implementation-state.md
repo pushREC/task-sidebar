@@ -226,3 +226,37 @@ All tasks NOT STARTED. Deferred to next session.
 - Sprint I preempts added to plan §7 (B1-B5): sanity-rebuild seq, useShallow+Map, QuickAdd mount, aria-hidden preservation, invalidateProject ordering
 - Anti-mediocrity ≥8 on all 5 dimensions. Gate passes.
 - Sprint H is zero-known-gap as of HEAD post-supremacy-commit.
+
+### Sprint I — Performance Bedrock — COMPLETE (2026-04-26, HEAD `ad2e85f`)
+
+All 8 sub-sprints + I.6 Bulk Move + I.9 R1+R2 convergence shipped:
+- I.1 type migration (4 commits across BulkBar, TaskDetailPanel, AgendaView Enriched<T>, api.ts strict flip)
+- I.2 lazy-mount + content-visibility (3 commits)
+- I.3 useShallow collapse (TaskRow useSidebarStore calls 12→2)
+- I.4 vault-cache layer (cache module + 13-writer invalidation incl. B5 restore-path symmetry + sync buildInitial + sanity-rebuild)
+- I.5 SSE coalesce (100ms debounce)
+- I.6 Bulk Move (5 commits + ProjectPicker; collision auto-suffix; B6 restoreFocus + terminal-toast)
+- I.7 locale (4 hardcoded "en-US" → undefined)
+- I.8 SSE manual reconnect (client-side via api.ts + App.tsx)
+- I.9 convergence: R1 + R2 — zero CRITICAL+HIGH+MEDIUM final verdict
+- Perf: /api/vault warm p50 17.89ms → 3.8ms (~4.7×); Agenda DOM 35370 → <5000
+
+### Sprint J — Feel Layer — COMPLETE (2026-04-26 → 2026-04-27, HEAD `31d0fbe`)
+
+All 15/15 polish items shipped: J.0.1 entry gate · J.1.1 stagger-fade · J.1.2 optimistic delete + bulk-delete + rollbackOptimistic · J.1.3 error-dot regression check · J.1.4 animation tokens · J.1.5 focus management · J.2.6 24×24 touch targets · J.2.7 prefers-contrast · J.2.8 color-blind cues (P1 fill + AlertCircle) · J.2.9 zoom audit (280px floor) · J.2.10 long-press menu (scaffold; wiring Sprint L) · J.2.11 haptics · J.2.12 skeleton crossfade · J.2.13 scroll-shadow · J.2.14 ⌘K focus trail · J.2.15 SSE backoff countdown.
+
+### Phase K — Closure audit — COMPLETE (2026-04-27, HEAD `31d0fbe`)
+
+4 parallel Tier-3 FULL STACK Explore critics on diff `350c987..31d0fbe` (44 commits, 41 files):
+- C1 plan↔code: 6 raw → 5 false positives (verified via direct grep) + 1 already-deferred (LongPress wiring per Sprint L)
+- C2 state-doc drift: 6 (2 CRIT) — TRUE; reconciled in this commit + PLAN-II-LOG.md (vault-side) + HANDOFF.md rewrite + handoff-2026-04-22-v2 archived
+- C3 hidden assumptions: 0 findings (all 12 probes pass — B1-B6 preempts, R2 invariants, type-soundness)
+- C4 end-to-end UX feel: 0 findings (all 7 user flows + 12 a11y/animation/zoom checks pass)
+
+E2E empirical roundtrip: marked-test-task `.phase-k-test-{TS}` create→delete via `/api/tasks/add` (HTTP 200) + `/api/tasks/delete-inline` (HTTP 200 + tombstoneId returned); cleanup grep clean (0 leftover marked tasks in `1-Projects/vault-sidebar/tasks.md`).
+
+R2 invariants at HEAD `31d0fbe`: BulkBar `restoreFocusBeforeUnmount`=8, `TOMBSTONE_TTL_MS=8000`=1, `aria-hidden={isDeleting`=1, fetchVaultSeq family=23 (≥6), `terminal?: boolean`=1.
+
+`pnpm tsc --noEmit`: 0 errors. AI-tells: empty.
+
+Tag `sprint-i-j-k-complete` placed at HEAD.
