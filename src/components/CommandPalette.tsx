@@ -64,13 +64,30 @@ export function CommandPalette() {
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  // Sprint J.2.14 — snapshot the focus owner at open time so close can
+  // restore it. Without this, ⌘K → Esc dropped focus to <body>, which
+  // killed `j`/`k` keyboard nav until the user manually re-clicked a row.
+  // Pattern matches the focus restoration audit (J.1.5) — applied here
+  // as a self-contained fix on the palette's well-defined open/close.
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  // Focus the input on open + reset state.
+  // Focus the input on open + reset state. Snapshot prior focus owner.
+  // On close, restore focus to the snapshot if it is still in the DOM
+  // (SSE refetches can remove rows mid-palette; fall back to body via
+  // the natural no-op when contains() is false).
   useEffect(() => {
     if (open) {
+      const active = document.activeElement;
+      previousFocusRef.current = active instanceof HTMLElement ? active : null;
       setQuery("");
       setActiveIdx(0);
       setTimeout(() => inputRef.current?.focus(), 0);
+    } else {
+      const target = previousFocusRef.current;
+      if (target && document.body.contains(target)) {
+        target.focus();
+      }
+      previousFocusRef.current = null;
     }
   }, [open]);
 
