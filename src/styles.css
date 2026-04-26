@@ -2302,6 +2302,23 @@ button.prop-row:focus-visible {
   gap: 6px;
   justify-content: center;
   letter-spacing: 0.3px;
+  /* Sprint J.2.15 — anchor the progress bar (.sse-banner__progress) which
+     uses absolute positioning to span the bottom edge under the banner. */
+  position: relative;
+}
+/* Sprint J.2.15 — 4px accent progress bar under the banner. Width is
+   driven by inline style from App.tsx (retrySecondsLeft / startSeconds *
+   100). 1s linear transition matches the countdown tick cadence so the
+   bar appears to glide rather than step. The reduced-motion block at file
+   end zeroes the transition, leaving the bar a static state indicator. */
+.sse-banner__progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--accent);
+  transition: width 1s linear;
+  pointer-events: none;
 }
 .sse-banner__dot {
   width: 6px; height: 6px; border-radius: 50%;

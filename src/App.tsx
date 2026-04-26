@@ -65,6 +65,11 @@ export function App() {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectFnRef = useRef<(() => void) | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sprint J.2.15 — capture the starting countdown duration at retry-click
+  // time so the 4px progress bar under the banner can compute its width
+  // ratio (`retrySecondsLeft / retryStartSecondsRef.current`). Reset to null
+  // when the countdown completes or the connection re-opens.
+  const retryStartSecondsRef = useRef<number | null>(null);
   // Sprint I.9 R1 — Codex SSE-BACKOFF-RESETS-ON-TRANSIENT-OPEN (LOW) fix:
   // reset backoff only after the connection stays open for ≥3s. Prevents
   // flapping connection (open → drop → open → drop within 100ms) from
@@ -403,6 +408,9 @@ export function App() {
               // an exponential-backoff retry loop.
               const delay = retryDelayMsRef.current;
               const started = Date.now();
+              // Sprint J.2.15 — capture starting duration for the progress bar
+              // ratio. Cleared at countdown completion below.
+              retryStartSecondsRef.current = Math.ceil(delay / 1000);
               const tick = () => {
                 const remaining = Math.max(0, Math.ceil((delay - (Date.now() - started)) / 1000));
                 setRetrySecondsLeft(remaining);
@@ -411,6 +419,7 @@ export function App() {
                 } else {
                   retryTimerRef.current = null;
                   setRetrySecondsLeft(null);
+                  retryStartSecondsRef.current = null;
                   reconnectFnRef.current?.();
                   retryDelayMsRef.current = Math.min(32_000, delay * 2);
                 }
@@ -421,6 +430,20 @@ export function App() {
           >
             Retry
           </button>
+          {/* Sprint J.2.15 — 4px accent progress bar under the banner showing
+              countdown progress. Width animates linearly via the 1s transition;
+              tick handler updates retrySecondsLeft each second so the bar
+              steps down 0..100% across the backoff window. The reduced-motion
+              @media block at file end zeroes the transition. */}
+          {retrySecondsLeft !== null && retryStartSecondsRef.current && retryStartSecondsRef.current > 0 && (
+            <div
+              className="sse-banner__progress"
+              style={{
+                width: `${Math.max(0, Math.min(100, (retrySecondsLeft / retryStartSecondsRef.current) * 100))}%`,
+              }}
+              aria-hidden="true"
+            />
+          )}
         </div>
       )}
 
