@@ -1120,6 +1120,34 @@ h3.group-header, .group-header {
 .bucket-header--accent:hover { color: var(--accent); }
 .bucket-header--empty { opacity: 0.7; }
 
+/* Sprint J.2.13 — scroll-shadow on sticky bucket headers.
+   When the header has detached from the natural document position
+   (i.e. position: sticky has activated because the page scrolled past
+   it), JS adds the .scrolled class. The ::after pseudo-element draws
+   a 8px-tall gradient shadow below the header, signaling "there is
+   content above me" to users. Active in dark theme by default; light
+   theme overrides the gradient color below to match its bg.
+   IntersectionObserver-driven: zero scroll-listener cost. */
+.bucket-header.scrolled::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -8px;
+  height: 8px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.18), transparent);
+  pointer-events: none;
+  /* Fade transition matches the J.1.4 standard ease so the shadow
+     appearance is consistent with rest-of-app motion language. */
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .bucket-header.scrolled::after {
+    background: linear-gradient(to bottom, rgba(26, 25, 23, 0.10), transparent);
+  }
+}
+[data-theme="light"] .bucket-header.scrolled::after {
+  background: linear-gradient(to bottom, rgba(26, 25, 23, 0.10), transparent);
+}
+
 .bucket-chev {
   display: inline-flex;
   align-items: center;
