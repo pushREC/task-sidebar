@@ -184,6 +184,11 @@ body {
   font-size: 13px;
   line-height: 1.5;
   width: 100%;
+  /* Sprint J.2.9 zoom audit (2026-04-26): 280px is the documented narrow-
+     viewport floor. Verified at 320/480/725px — no fixed-width regressions,
+     all popovers (project-picker 260px, popovers ≤240px, modals ≤400px) are
+     portaled and do not affect viewport flow. Below 280px content clips
+     rather than re-laying out per Lock #6 contract. */
   min-width: 280px;
   min-height: 100dvh;
   overflow-x: hidden;
