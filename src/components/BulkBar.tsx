@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { CheckCircle2, FolderInput, X, Trash2 } from "lucide-react";
+import { pulse } from "../lib/haptics.js";
 import type { Task, Project } from "../api.js";
 import {
   cancelReconcileApi,
@@ -116,6 +117,8 @@ export function BulkBar({ projects }: BulkBarProps) {
   // /api/tasks/toggle; entity tasks go through /api/tasks/status-edit
   // which queues the delayed reconcile per path.
   async function handleBulkDone() {
+    pulse(); // Sprint J.2.11 — tactile click confirmation (silent no-op when unsupported / reduced-motion)
+
     if (isProcessing) return; // guard against double-click (UX-001 variant)
     const entries = selectedEntries;
     const previouslyOpen = entries.filter((e) => !e.task.done);
@@ -291,6 +294,8 @@ export function BulkBar({ projects }: BulkBarProps) {
   //   If this becomes a real pain point, the refactor lands in Sprint I
   //   as part of the bulk-move work (same loop shape).
   async function handleBulkDelete() {
+    pulse(); // Sprint J.2.11 — tactile click confirmation
+
     if (isProcessing) return;
     const entries = selectedEntries;
     if (entries.length === 0) return;
@@ -411,6 +416,8 @@ export function BulkBar({ projects }: BulkBarProps) {
    * again — undo is best-effort but never data-destructive.
    */
   async function handleBulkMove(targetSlug: string): Promise<void> {
+    pulse(); // Sprint J.2.11 — tactile click confirmation
+
     if (isProcessing) return;
     const entries = selectedEntries;
     if (entries.length === 0) return;

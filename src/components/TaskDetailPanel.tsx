@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
+import { pulse } from "../lib/haptics.js";
 import type { Task } from "../api.js";
 import {
   deleteEntityTaskApi,
@@ -781,6 +782,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
   // error row with the server message.
 
   async function handleDeleteConfirm() {
+    pulse(); // Sprint J.2.11 — tactile click confirmation
+
     setConfirmOpen(false);
     setDeleteError(null);
     // R3 DELETE-DOUBLE-SUBMIT (Gemini) — lock the whole panel immediately

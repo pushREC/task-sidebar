@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Circle, CheckCircle2, Pencil, AlertCircle } from "lucide-react";
+import { pulse } from "../lib/haptics.js";
 import type { Task, Project } from "../api.js";
 import {
   toggleTaskApi,
@@ -172,6 +173,9 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
     }
     e.stopPropagation();
     if (!tasksPath) return;
+    // Sprint J.2.11 — tactile click confirmation. pulse() is a silent no-op
+    // when navigator.vibrate is unsupported or prefers-reduced-motion is set.
+    pulse();
     if (!isInlineTask(task)) return;
     const taskLine = task.line;
 
