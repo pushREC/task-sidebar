@@ -2672,6 +2672,50 @@ button.prop-row:focus-visible {
   background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
+/* Long-press context menu — Sprint J.2.10. Touch/trackpad parity for
+   right-click. Single accent color (Lock #1). Reuses .cmdp-reveal
+   keyframe (already reduced-motion-guarded). */
+.long-press-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--separator-strong);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.32);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: cmdp-reveal 120ms ease-out;
+}
+.long-press-menu__item {
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: transparent;
+  color: var(--text-primary);
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 80ms ease-out;
+}
+.long-press-menu__item:hover,
+.long-press-menu__item--active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.long-press-menu__item:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1.5px;
+}
+
 /* Reduced motion (must be last) */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
