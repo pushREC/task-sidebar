@@ -295,13 +295,22 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
   box-shadow: inset 2px 0 0 0 var(--accent);
 }
 
-/* H8 / M21 — task-circle is now a <button>; button defaults reset,
-   padding expands hit region to ≥24×24 px without growing the 16×16 glyph */
+/* H8 / M21 / J.2.6 — task-circle is now a <button>; button defaults reset,
+   padding expands hit region to ≥24×24 px without growing the 16×16 glyph.
+   Sprint J.2.6 — added explicit min-width/min-height as a defensive floor
+   so future padding reductions can't accidentally shrink the hit area
+   below Apple HIG / WCAG SC 2.5.5 minimum (24×24 px). Current effective
+   dim is 32×32 (16 glyph + 8 padding × 2) under the global border-box
+   reset, which exceeds the floor. The min-* lines lock the floor even
+   if padding is later trimmed. */
 .task-circle {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* J.2.6 — defensive floor for touch / pointer hit area. */
+  min-width: 24px;
+  min-height: 24px;
   /* Button reset */
   background: none;
   border: none;
