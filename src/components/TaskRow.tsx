@@ -106,6 +106,12 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
   // (e.g. 409 mtime-mismatch surfaces "File was edited elsewhere" not the
   // generic "Write failed"). Undefined → fall back to generic below.
   // B2 preempt — kept SEPARATE from the useShallow tuple above.
+  // Sprint J.1.3 audit (2026-04-26) — verified intact post-Sprint-I (useShallow
+  // collapse) and post-Sprint-J.2.x (color-blind cues, prefers-contrast,
+  // 24x24 floor, scroll-shadow, animation tokens). The Map subscription is
+  // a primitive `.get()` value (string | undefined) — stable under
+  // identity-equality, so this read does not trigger spurious re-renders
+  // on unrelated store updates.
   const taskErrorMessage = useSidebarStore((s) => s.taskErrorMessages.get(task.id));
 
   const [isEditing, setIsEditing] = useState(false);
