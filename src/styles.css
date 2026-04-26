@@ -44,6 +44,17 @@
   --skeleton: rgba(255, 255, 255, 0.04);
   --skeleton-hi: rgba(255, 255, 255, 0.08);
 
+  /* J.1.4 — Animation timing tokens.
+     3 ease curves cover all current uses (cmdp-reveal, soft springs, emphatic spring).
+     3 duration buckets reserved as scaffolding for future J items (J.1.1 stagger,
+     J.2.12 skeleton crossfade). Existing duration literals left in place this commit
+     to keep behavior pixel-identical; tokenize-durations is a follow-up. */
+  --ease-spring-subtle: cubic-bezier(0.25, 0.9, 0.35, 1.05);   /* mild overshoot — bulk-bar, undo-toast, confirm-scale */
+  --ease-spring-emphatic: cubic-bezier(0.25, 0.9, 0.35, 1.25); /* strong overshoot — task-complete celebration */
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);              /* fast ease-out-expo — cmdp-reveal */
+  --dur-fast: 140ms;
+  --dur-base: 180ms;
+  --dur-slow: 360ms;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
@@ -256,7 +267,7 @@ h1.header-title, .header-title { margin: 0; font-size: 13px; font-weight: 500; c
    pushrec-dashboard task-complete keyframes (ui-ux §4 timing). Guarded by
    prefers-reduced-motion at file end. */
 .task-circle-bounce {
-  animation: task-complete 360ms cubic-bezier(0.25, 0.9, 0.35, 1.25);
+  animation: task-complete 360ms var(--ease-spring-emphatic);
 }
 @keyframes task-complete {
   0%   { transform: scale(1); }
@@ -1535,7 +1546,7 @@ button.task-due:focus-visible {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: cmdp-reveal 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: cmdp-reveal 180ms var(--ease-standard);
 }
 @keyframes cmdp-reveal {
   from { opacity: 0; transform: translateY(-8px) scale(0.98); }
@@ -1674,7 +1685,7 @@ button.task-due:focus-visible {
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   overflow: hidden;
-  animation: cmdp-reveal 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: cmdp-reveal 180ms var(--ease-standard);
 }
 
 .project-picker__input {
@@ -1931,7 +1942,7 @@ button.prop-row:focus-visible {
   padding: 16px 16px 12px;
   width: min(360px, calc(100vw - 32px));
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
-  animation: confirm-scale-in 140ms cubic-bezier(0.25, 0.9, 0.35, 1.1);
+  animation: confirm-scale-in 140ms var(--ease-spring-subtle);
 }
 
 @keyframes confirm-scale-in {
@@ -2316,7 +2327,7 @@ button.prop-row:focus-visible {
   background: var(--bg-surface);
   border-top: 1px solid var(--separator-strong);
   border-bottom: 1px solid var(--separator);
-  animation: bulk-bar-slide-up 200ms cubic-bezier(0.25, 0.9, 0.35, 1.05);
+  animation: bulk-bar-slide-up 200ms var(--ease-spring-subtle);
   /* Explicit z-index keeps it above task-list content during scroll. */
   position: relative;
   z-index: 3;
@@ -2406,7 +2417,7 @@ button.prop-row:focus-visible {
   border: 1px solid var(--separator-strong);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  animation: undo-toast-in 180ms cubic-bezier(0.25, 0.9, 0.35, 1.05);
+  animation: undo-toast-in 180ms var(--ease-spring-subtle);
   max-width: calc(100vw - 32px);
   font-size: 12px;
 }
