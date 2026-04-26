@@ -792,6 +792,15 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
     // refetch fails (panel stays open with error visible).
     setIsDeleting(true);
 
+    // Sprint J.1.2 — optimistic delete. Snapshot vault BEFORE filtering
+    // the task out of display. Server SSE refetch (collapseAfterRefetch
+    // below) is the natural success path. Any error branch below restores
+    // via rollbackOptimistic(optimisticSnapshot). The task vanishes from
+    // every list (today, every project) within one render frame instead
+    // of waiting on the API roundtrip — captures the snappiness mandate.
+    const optimisticSnapshot = useSidebarStore.getState().vault;
+    useSidebarStore.getState().optimisticDelete(task.id);
+
     // R1 DELETE-UNMOUNT-TIMING — refetch BEFORE collapsing the panel so
     // the ConfirmModal's focus-restore useEffect runs while the trash
     // button (returnFocusRef target) is still in the DOM.
@@ -885,6 +894,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           queueRestoreUndo(r.data.tombstoneId);
           await collapseAfterRefetch();
         } else {
+          // Sprint J.1.2 — restore optimistic-deleted task to UI
+          if (optimisticSnapshot) useSidebarStore.getState().rollbackOptimistic(optimisticSnapshot);
           setDeleteError(r.error);
           setIsDeleting(false);   // R3 — unlock on delete failure too
         }
@@ -900,6 +911,8 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
           queueRestoreUndo(r.data.tombstoneId);
           await collapseAfterRefetch();
         } else {
+          // Sprint J.1.2 — restore optimistic-deleted task to UI
+          if (optimisticSnapshot) useSidebarStore.getState().rollbackOptimistic(optimisticSnapshot);
           setDeleteError(r.error);
           setIsDeleting(false);   // R3 — unlock on delete failure too
         }
@@ -907,6 +920,9 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
     } catch (err) {
       // Delete API threw (timeout, network, parse error). Unlock the
       // panel + surface a visible message so the user can retry.
+      // Sprint J.1.2 — restore optimistic-deleted task. Unknown if the
+      // server-side delete actually committed; SSE will reconcile if so.
+      if (optimisticSnapshot) useSidebarStore.getState().rollbackOptimistic(optimisticSnapshot);
       const msg = err instanceof Error ? err.message : "Delete request failed";
       setDeleteError(`Delete failed: ${msg}`);
       setIsDeleting(false);

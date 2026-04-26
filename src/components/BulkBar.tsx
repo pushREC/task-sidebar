@@ -308,6 +308,18 @@ export function BulkBar({ projects }: BulkBarProps) {
     // The revert closure posts restoreTombstoneApi for each in order.
     const tombstoneIds: string[] = [];
 
+    // Sprint J.1.2 — optimistic bulk-delete. Snapshot vault first, then
+    // filter ALL selected tasks out of display in one batch. Every row
+    // vanishes in the same frame as the click — user sees instant action.
+    // refreshVault() at end reconciles with server truth (succeeds become
+    // permanent, any failures reappear). On total-failure, explicit rollback
+    // restores the snapshot so the user isn't left in a misleading state
+    // until refreshVault completes.
+    const optimisticSnapshot = useSidebarStore.getState().vault;
+    for (const { task } of entries) {
+      useSidebarStore.getState().optimisticDelete(task.id);
+    }
+
     try {
     for (let i = 0; i < entries.length; i++) {
       const { task, tasksPath } = entries[i];
@@ -339,6 +351,15 @@ export function BulkBar({ projects }: BulkBarProps) {
       setProgress({ done: i + 1, total: entries.length });
     }
     setFailures(localFailures);
+
+    // Sprint J.1.2 — total-failure rollback. If every API call failed,
+    // refreshVault below will eventually pull the truth, but the user
+    // shouldn't see an empty agenda flash for the SSE-roundtrip window.
+    // Restore the snapshot synchronously so the rows reappear before the
+    // next paint frame.
+    if (deletedCount === 0 && localFailures > 0 && optimisticSnapshot) {
+      useSidebarStore.getState().rollbackOptimistic(optimisticSnapshot);
+    }
 
     await refreshVault();
     restoreFocusBeforeUnmount();

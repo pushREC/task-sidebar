@@ -108,6 +108,19 @@ interface SidebarState {
    *  callers), the update always applies. */
   setVault: (vault: VaultResponse, seq?: number) => void;
   optimisticToggle: (taskId: string) => void;
+  /** Sprint J.1.2 — optimistic delete. Caller snapshots `vault` before
+   *  the optimistic mutation; on API error the snapshot is restored via
+   *  `rollbackOptimistic`. Server SSE + setVault is the natural success
+   *  path (refetch arrives with fresh state, overwriting the optimistic
+   *  mutation). Follows the existing optimisticToggle in-place mutation
+   *  pattern — no separate overlay state, no view-layer changes. Optimistic
+   *  CREATE deferred to Sprint L (requires Task-shape synthesis OR
+   *  view-layer merge — both higher-risk than deleting from a known set). */
+  optimisticDelete: (taskId: string) => void;
+  /** Atomic vault restore. Bypasses fetchVaultSeq machinery (rollback
+   *  is local correction, not a fetch). Use ONLY with a snapshot taken
+   *  immediately before the matching optimistic action. */
+  rollbackOptimistic: (snapshot: VaultResponse) => void;
   /** Sprint H R2 D2 — optional `message` argument routes to taskErrorMessages. */
   markTaskError: (taskId: string, message?: string) => void;
   clearTaskError: (taskId: string) => void;
@@ -311,6 +324,32 @@ export const useSidebarStore = create<SidebarState>()(
             })),
           },
         });
+      },
+
+      optimisticDelete(taskId) {
+        const { vault } = get();
+        if (!vault) return;
+        // Filter task out of today + every project's task list. Matches
+        // the optimisticToggle pattern (in-place vault rewrite). Server
+        // SSE refetch will overwrite either way; rollback restores via
+        // explicit snapshot if API fails.
+        set({
+          vault: {
+            ...vault,
+            today: vault.today.filter((t) => t.id !== taskId),
+            projects: vault.projects.map((p) => ({
+              ...p,
+              tasks: p.tasks.filter((t) => t.id !== taskId),
+            })),
+          },
+        });
+      },
+
+      rollbackOptimistic(snapshot) {
+        // Bypass seq machinery — this is local correction, not a fetch.
+        // Snapshot is the pre-optimistic-action state captured by the
+        // caller; restoring it undoes the optimistic mutation cleanly.
+        set({ vault: snapshot });
       },
 
       markTaskError(taskId, message) {
