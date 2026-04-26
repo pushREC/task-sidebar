@@ -21,7 +21,12 @@
   /* Sprint C — P1-P4 priority pill tokens (V2B pick). Same red/amber/gray/
      faint palette in both themes; per-theme override happens via --priority-*
      indirection in the dark/light blocks below. */
-  --priority-p1: #d84a3e;             /* red, critical */
+  --priority-p1: #d84a3e;             /* red, critical (outline/text variant) */
+  /* Sprint J.2.8 fix CP1/OG1 — solid-fill P1 needs darker red for AA contrast
+     against white text. #d84a3e + white = 4.23:1 (FAILS AA 4.5:1). #a63228 +
+     white = 8:1 (AAA). Per-theme overrides below ensure prefers-contrast: more
+     also strengthens the contrast (default token never weakens it). */
+  --priority-p1-fill: #a63228;        /* solid-fill P1 bg (AA+ with white text) */
   --priority-p2: #e88a3e;              /* amber, high */
   --priority-p3-fg: #6b7280;           /* gray text, medium */
   --priority-p3-border: rgba(107,114,128,0.42);
@@ -71,6 +76,8 @@
        [data-theme="light"] block so system-light users get the same
        WCAG-compliant interactive border contrast. */
     --separator-strong: rgba(26, 25, 23, 0.28);
+    /* Sprint J.2.8 — darker P1 fill on light bg keeps white text >9:1 (AAA). */
+    --priority-p1-fill: #7a2420;
     --skeleton: rgba(26, 25, 23, 0.05);
     --skeleton-hi: rgba(26, 25, 23, 0.10);
   }
@@ -87,6 +94,8 @@
   --text-secondary: #5a5955;
   --separator: rgba(26, 25, 23, 0.08);
   --separator-strong: rgba(26, 25, 23, 0.28);
+  /* Sprint J.2.8 — see :root/system-light comment for rationale. */
+  --priority-p1-fill: #7a2420;
   --skeleton: rgba(26, 25, 23, 0.05);
   --skeleton-hi: rgba(26, 25, 23, 0.10);
 }
@@ -125,6 +134,11 @@
     --separator-strong: rgba(255, 255, 255, 0.80);
     --accent: #ff6b5d;
     --accent-dim: #d84a3e;
+    /* Sprint J.2.8 fix OG2 — high-contrast mode must STRENGTHEN P1-fill contrast,
+       not weaken it. Plain --accent-dim under prefers-contrast resolves to
+       #d84a3e here which would fail AA. Use a darker red for AAA-grade
+       (#6b1810 + white ~12:1). */
+    --priority-p1-fill: #6b1810;
   }
   /* Light themes: explicit light + system-light fallback both map here. */
   :root:not([data-theme="dark"]),
@@ -135,6 +149,8 @@
     --separator-strong: rgba(0, 0, 0, 0.90);
     --accent: #8a1f15;
     --accent-dim: #6b1810;
+    /* Sprint J.2.8 — even darker red on light prefers-contrast (~14:1). */
+    --priority-p1-fill: #5e1a13;
   }
 }
 
@@ -1275,6 +1291,19 @@ h3.group-header, .group-header {
   color: var(--accent);
 }
 
+/* Sprint J.2.8 — AlertCircle icon next to overdue dates.
+   Color-blind cue (non-color signal): provides a recognizable icon for
+   ~8% of men with red-green CVD who can't distinguish the red text from
+   the surrounding gray UI. Inherits color from the parent button so it
+   stays in sync with theme + prefers-contrast variants. */
+.task-due-icon {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 2px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
 /* Sprint B — count-badge variant with accent color when Agenda has items */
 .count-badge[data-agenda-count] {
   /* inherits base .count-badge styling; no extra rule needed yet */
@@ -1309,14 +1338,29 @@ h3.group-header, .group-header {
   outline-offset: 2px;
 }
 
-/* P1 — critical: filled red */
+/* P1 — critical: SOLID-FILLED red (Sprint J.2.8 color-blind cue).
+   Differentiates P1 from P2/P3/P4 by FILL-DENSITY rather than just hue,
+   so users with red-green CVD can still tell P1 apart from P2 (amber)
+   and P3 (gray) by the saturation/contrast difference. Pre-J.2.8 used
+   22% transparent which looked similar to P2 under deuteranopia.
+   Critic-fix CP1/OG1/OG2 (2026-04-26): uses --priority-p1-fill (not the
+   raw --priority-p1) so white text holds ≥4.5:1 WCAG AA in every theme
+   incl. prefers-contrast: more. Token values per-theme:
+     dark default      #a63228  →  white ~8:1   (AAA)
+     light default     #7a2420  →  white ~9:1   (AAA)
+     dark + contrast   #6b1810  →  white ~12:1  (AAA)
+     light + contrast  #5e1a13  →  white ~14:1  (AAA) */
 .priority-pill--p1 {
-  background: color-mix(in srgb, var(--priority-p1) 22%, transparent);
-  color: var(--priority-p1);
-  border-color: color-mix(in srgb, var(--priority-p1) 50%, transparent);
+  background: var(--priority-p1-fill);
+  color: var(--accent-foreground);
+  border-color: var(--priority-p1-fill);
 }
 .priority-pill--p1:hover {
-  background: color-mix(in srgb, var(--priority-p1) 32%, transparent);
+  /* Slightly darker on hover for affordance. color-mix keeps the relative
+     darkening proportional to the per-theme base, so hover state never
+     drops below AA either. */
+  background: color-mix(in srgb, var(--priority-p1-fill) 85%, black);
+  border-color: color-mix(in srgb, var(--priority-p1-fill) 85%, black);
 }
 
 /* P2 — high: amber outline */

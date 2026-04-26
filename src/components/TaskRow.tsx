@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Circle, CheckCircle2, Pencil } from "lucide-react";
+import { Circle, CheckCircle2, Pencil, AlertCircle } from "lucide-react";
 import type { Task, Project } from "../api.js";
 import {
   toggleTaskApi,
@@ -586,6 +586,17 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
                 setOpenPopover((p) => (p === "due" ? null : "due"));
               }}
             >
+              {/* Sprint J.2.8 — color-blind cue: AlertCircle icon next to
+                  overdue date so deuteranopia/protanopia users can identify
+                  overdue without relying on the red text color. */}
+              {isOverdueLocal && task.due && (
+                <AlertCircle
+                  size={10}
+                  strokeWidth={2.5}
+                  className="task-due-icon"
+                  aria-hidden="true"
+                />
+              )}
               {task.due ? relativeDue(task.due, nowStamp) : "—"}
             </button>
             {/* Sprint C F05 + D19/V2B — priority pill is a button opening
