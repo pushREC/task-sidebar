@@ -9,7 +9,7 @@ parent-project: "[[1-Projects/vault-sidebar/README]]"
 head-at-capture: b13af56
 target-phase: Sprint I (I.6 Bulk Move still deferred — I.9 R1+R2 convergence NOW COMPLETE)
 server: launchd com.robertzinke.task-sidebar @ 127.0.0.1:5174
-vault-target: /Users/robertzinke/pushrec-vault (real vault, 50 projects)
+vault-target: $HOME/<your-vault> (real vault, 50 projects in our local capture)
 ---
 
 # Sprint I — Post-Execution Performance Measurements

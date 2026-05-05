@@ -90,7 +90,7 @@
 
 Post-sanitization + post-supremacy-audit ergonomics work. Enables "always-available sidebar at 127.0.0.1:5174 against real vault" without per-session manual startup.
 
-- P0.T1 — Write `/Users/robertzinke/.task-sidebar-env` — COMPLETE (3 exports: VAULT_ROOT, PRIORITY_SCRIPT_PATH, RECONCILE_SCRIPT_PATH)
+- P0.T1 — Write `$HOME/.task-sidebar-env` — COMPLETE (3 exports: VAULT_ROOT, PRIORITY_SCRIPT_PATH, RECONCILE_SCRIPT_PATH)
 - P0.T2 — Write launchd plist at `~/Library/LaunchAgents/com.robertzinke.task-sidebar.plist` — COMPLETE (RunAtLoad=true, KeepAlive=true, ThrottleInterval=10, Interactive ProcessType, logs to `/tmp/task-sidebar.log`)
 - P0.T3 — `launchctl load -w` + verify — COMPLETE
   - Agent loaded as PID captured at load time

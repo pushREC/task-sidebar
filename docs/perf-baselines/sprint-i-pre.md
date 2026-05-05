@@ -9,7 +9,7 @@ parent-project: "[[1-Projects/vault-sidebar/README]]"
 head-at-capture: 350c987
 target-phase: Sprint I
 server: launchd com.robertzinke.task-sidebar @ 127.0.0.1:5174
-vault-target: /Users/robertzinke/pushrec-vault (real vault, 50 projects)
+vault-target: $HOME/<your-vault> (real vault, 50 projects in our local capture)
 ---
 
 # Sprint I — Pre-Execution Performance Baseline
