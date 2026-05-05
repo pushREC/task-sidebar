@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeft, FileText } from "lucide-react";
-import type { Project } from "../api.js";
+import type { InlineTask, Project } from "../api.js";
 import { addTaskApi } from "../api.js";
 import { EntityCreateForm } from "./EntityCreateForm.js";
 import { useSidebarStore } from "../store.js";
 import { fuzzyFilter } from "../lib/fuzzy.js";
+
+// Sprint L (J.1.2 completion) — sentinel line for placeholder InlineTask.
+// Real tasks.md line numbers are bounded by file length (typically <500);
+// 999999 is high enough that a stale toggle/edit click during the SSE
+// reconciliation window fails fast at the server safety check rather
+// than hitting a real task. The placeholder is washed out by the next
+// /api/vault refetch (≤150ms post Sprint I.5 SSE coalesce window).
+const PLACEHOLDER_LINE = 999_999;
 
 interface QuickAddProps {
   projects: Project[];
@@ -70,6 +78,33 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
     setSubmitting(true);
     setLastError(null);
 
+    // Sprint L (J.1.2 completion) — optimistic create. Snapshot vault
+    // before the placeholder insert so a server failure can roll back
+    // cleanly. Same contract as optimisticDelete + bulk-delete: caller
+    // snapshots, store mutates in-place, rollback restores on error.
+    // Success path is implicit: SSE refresh overwrites the placeholder
+    // with the real server-emitted Task within the SSE coalesce window
+    // (≤150ms). Use crypto.randomUUID() for the placeholder id so it
+    // never collides with a real server-issued id. Sentinel line=999999
+    // means a fast click on the placeholder before the SSE settle lands
+    // on a server "line out of range" — error-dot for ~5s, no corruption.
+    const store = useSidebarStore.getState();
+    const snapshot = store.vault;
+    const targetProject = snapshot?.projects.find((p) => p.slug === selectedSlug);
+    const placeholder: InlineTask = {
+      id: crypto.randomUUID(),
+      action: trimmed,
+      status: "open",
+      done: false,
+      source: "inline",
+      line: PLACEHOLDER_LINE,
+      projectSlug: selectedSlug,
+      projectTitle: targetProject?.title,
+    };
+    if (snapshot) {
+      store.optimisticCreate(placeholder);
+    }
+
     const result = await addTaskApi({ slug: selectedSlug, text: trimmed });
 
     setSubmitting(false);
@@ -77,7 +112,17 @@ export function QuickAdd({ projects, defaultSlug, inputRef }: QuickAddProps) {
     if (result.ok) {
       setText("");
       lastQuickAddSlug.current = selectedSlug;
+      // No explicit placeholder removal — the upcoming SSE-triggered
+      // /api/vault refetch will replace the entire vault with the
+      // server's authoritative state, naturally washing out the
+      // placeholder by ID (the server-issued real task has a different
+      // crypto-derived id).
     } else {
+      // Server rejected the create. Restore the pre-placeholder snapshot
+      // so the row vanishes and surface the error to the user.
+      if (snapshot) {
+        useSidebarStore.getState().rollbackOptimistic(snapshot);
+      }
       setLastError(result.error);
     }
   }

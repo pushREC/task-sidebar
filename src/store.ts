@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, type PersistStorage } from "zustand/middleware";
-import type { VaultResponse } from "./api.js";
+import type { Task, VaultResponse } from "./api.js";
 import {
   ALL_BUCKETS,
   DEFAULT_COLLAPSED,
@@ -113,10 +113,19 @@ interface SidebarState {
    *  `rollbackOptimistic`. Server SSE + setVault is the natural success
    *  path (refetch arrives with fresh state, overwriting the optimistic
    *  mutation). Follows the existing optimisticToggle in-place mutation
-   *  pattern — no separate overlay state, no view-layer changes. Optimistic
-   *  CREATE deferred to Sprint L (requires Task-shape synthesis OR
-   *  view-layer merge — both higher-risk than deleting from a known set). */
+   *  pattern — no separate overlay state, no view-layer changes. */
   optimisticDelete: (taskId: string) => void;
+  /** Sprint L (J.1.2 completion) — optimistic create. Caller synthesizes
+   *  a placeholder InlineTask with `crypto.randomUUID()` id + sentinel
+   *  line=999_999 + the QuickAdd target slug, and snapshots `vault`
+   *  before invoking. The placeholder is appended to the matching
+   *  project's task list and surfaced in the appropriate Agenda bucket
+   *  via `bucketOf` (no-date placeholder lands in the No-date bucket).
+   *  On API success the next SSE refresh + setVault overwrites the
+   *  placeholder with the real server-emitted Task. On API error the
+   *  caller restores via `rollbackOptimistic(snapshot)` — same contract
+   *  as optimisticDelete. */
+  optimisticCreate: (task: Task) => void;
   /** Atomic vault restore. Bypasses fetchVaultSeq machinery (rollback
    *  is local correction, not a fetch). Use ONLY with a snapshot taken
    *  immediately before the matching optimistic action. */
@@ -341,6 +350,28 @@ export const useSidebarStore = create<SidebarState>()(
               ...p,
               tasks: p.tasks.filter((t) => t.id !== taskId),
             })),
+          },
+        });
+      },
+
+      optimisticCreate(task) {
+        const { vault } = get();
+        if (!vault) return;
+        // Match the placeholder to its target project by slug. The caller
+        // sets task.projectSlug so the UI knows which project's task list
+        // to append into. Skip insertion if the slug doesn't match any
+        // current project — the SSE refresh will surface the real task
+        // once it arrives, so a missed optimistic insert is recoverable.
+        const targetSlug = task.projectSlug;
+        if (!targetSlug) return;
+        set({
+          vault: {
+            ...vault,
+            projects: vault.projects.map((p) =>
+              p.slug === targetSlug
+                ? { ...p, tasks: [...p.tasks, task] }
+                : p,
+            ),
           },
         });
       },
