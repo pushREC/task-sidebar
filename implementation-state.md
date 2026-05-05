@@ -294,3 +294,27 @@ Outstanding LOW items (Sprint M candidates; non-blocking polish):
 - Gemini R2 deferred: TRUNCATION-SURROGATE-BREAK (emoji-at-37-byte-boundary slice in error tooltip text)
 
 Both are documented in PLAN-II-LOG.md (vault-side); deferred since Sprint H R2 close in 2026-04-19. No outstanding CRITICAL/HIGH/MEDIUM in any sprint.
+
+### Sprint M — Final LOW Closure — COMPLETE (2026-05-05, HEAD `355b5c5`)
+
+Closes the two Gemini R2 LOW items above in a single batched commit. With these closed, public `pushREC/task-sidebar` is **zero-known-finding at every severity tier** (CRITICAL / HIGH / MEDIUM / LOW) across the full Plan II convergence history (Sprint H R1+R2, Sprint I R1, Sprint J R1, Phase K Tier-3, Sprint L triple-check, Sprint M).
+
+Commit `355b5c5` (3 files, 9 insertions / 6 deletions):
+
+| Item | Site | Fix |
+|---|---|---|
+| ERROR-DOT-FALLBACK-COPY | TaskRow.tsx errorMessageFor() L226 + data-error-msg L700 + aria-label L699 + sr-only L714 + store.ts taskErrorMessages docblock L71 | "Write failed — check server response" → "Couldn't save — try again" (active voice, fewer chars, action-oriented). Specific R2-mapped messages (mtime-mismatch, not-found, AbortError, TimeoutError) unchanged — fallback only applies when `markTaskError(taskId)` is called without a message arg. |
+| TRUNCATION-SURROGATE-BREAK | TaskDetailPanel.tsx:840 pendingUndo label truncation | `task.action.length > 40 ? task.action.slice(0, 37) + "…"` → `Array.from(task.action)` code-point array + `.slice(0, 37).join("")`. Preserves emoji surrogate pairs (e.g. 🔥 U+1F525) at the 40-char boundary; prior UTF-16-code-unit slice could split mid-pair → mojibake replacement glyph. |
+
+Per-task gate at HEAD `355b5c5`: `pnpm tsc --noEmit` 0 errors, AI-tells empty, R2 invariants 8/1/1/23/1 unchanged. Visible UI surface preserved (text-only changes, no DOM structure shift, no animation/timing change, no a11y regression). All Sprint H R2 + supremacy-audit + Sprint I.6 invariants from `verify.sh` semantic surface still satisfied.
+
+**Public repo final status as of HEAD `355b5c5`:**
+- Zero CRITICAL findings outstanding (all sprints)
+- Zero HIGH findings outstanding (Sprint L closed the last — real-vault PNG leak via force-push remediation)
+- Zero MEDIUM findings outstanding (Sprint H R2 closed last — TASK-DETAIL-DEL-OVERLAY-SR + BULK-BAR-FOCUS-LOSS)
+- Zero LOW findings outstanding (Sprint M closed last two — ERROR-DOT-FALLBACK-COPY + TRUNCATION-SURROGATE-BREAK)
+- 11 architecture locks (Darkroom-Minimal / Geist / Lucide-only / Property List / auto-promote / responsive width / vault-relative paths / inferred priority / field allowlist / O_EXCL creates) preserved
+- 5 Sprint H R2 invariants (seq counter / aria-hidden isDeleting / restoreFocusBeforeUnmount / TOMBSTONE_TTL_MS=8000 / terminal? boolean) preserved
+- launchd auto-start at 127.0.0.1:5174 against real vault, log rotation in place
+
+No queued Sprint N candidates. Next finding-grade work would arrive from external review or a regression. Closure achieved.
