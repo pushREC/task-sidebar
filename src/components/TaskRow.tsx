@@ -9,6 +9,7 @@ import {
   moveTaskApi,
   editTaskFieldApi,
   isInlineTask,
+  isEntityTask,
   promoteAndEditTaskApi,
 } from "../api.js";
 import { useSidebarStore } from "../store.js";
@@ -16,6 +17,7 @@ import { TaskDetailPanel } from "./TaskDetailPanel.js";
 import { relativeDue, parseISODate, diffDays } from "../lib/format.js";
 import { DuePopover } from "./DuePopover.js";
 import { PriorityPopover } from "./PriorityPopover.js";
+import { LongPressMenu, useLongPress, type LongPressAction } from "./LongPressMenu.js";
 import { fetchVault, nextVaultSeq } from "../api.js";
 
 interface TaskRowProps {
@@ -125,6 +127,11 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
   const [openPopover, setOpenPopover] = useState<"due" | "priority" | null>(null);
   const dueBtnRef = useRef<HTMLButtonElement | null>(null);
   const priorityBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Sprint J.2.10 — long-press menu state. Anchor at the originating
+  // pointer's clientX/Y. Disabled while inline-editing, mid-write, or
+  // any popover is open so long-press doesn't fight other gestures.
+  const [longPressMenuPos, setLongPressMenuPos] = useState<{ x: number; y: number } | null>(null);
 
   const hasError = errorTaskIds.has(task.id);
   const isSelected = selectedTaskId === taskId;
@@ -351,6 +358,56 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
     ]);
   }
 
+  // Sprint J.2.10 — wired here, hook is in LongPressMenu.tsx.
+  // Disabled while editing inline / applying a field-edit / popover open
+  // so the 400ms timer doesn't fight other gestures. The hook itself
+  // also bails on secondary mouse buttons (right-click already triggers
+  // the browser's native contextmenu, which we don't override).
+  const longPressHandlers = useLongPress({
+    onLongPress: (x, y) => setLongPressMenuPos({ x, y }),
+    disabled: isEditing || isApplying || openPopover !== null,
+  });
+
+  function handleLongPressPick(action: LongPressAction) {
+    setLongPressMenuPos(null);
+    if (action === "edit") {
+      // Same as keyboard `E` / pencil click — promotes inline-edit input.
+      startEditing();
+      return;
+    }
+    if (action === "delete") {
+      // Open the detail panel where the trash button lives. The user
+      // confirms via the existing ConfirmModal flow. We do NOT auto-fire
+      // delete from the menu — too destructive for a single gesture.
+      setSelectedTaskId(taskId);
+      setExpandedTaskId(taskId);
+      return;
+    }
+    // "copy-link" — vault-relative wikilink to clipboard. Entity tasks
+    // get the entity file directly; inline tasks fall back to the
+    // tasks.md path with a line anchor (Obsidian honors `#L{n}` jumps).
+    // Discriminated-union narrowing: entity has entityPath, inline has line.
+    let wikilinkBody = "";
+    if (isEntityTask(task)) {
+      wikilinkBody = task.entityPath.replace(/\.md$/, "");
+    } else if (isInlineTask(task) && tasksPath) {
+      wikilinkBody = `${tasksPath.replace(/\.md$/, "")}#L${task.line}`;
+    } else if (tasksPath) {
+      wikilinkBody = tasksPath.replace(/\.md$/, "");
+    }
+    if (wikilinkBody === "") return;
+    const wikilink = `[[${wikilinkBody}]]`;
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      void navigator.clipboard.writeText(wikilink).catch(() => {
+        // Clipboard API can fail in non-secure contexts or denied
+        // permissions; the launchd dev server runs on http://127.0.0.1
+        // which is a secure context, but be defensive anyway. Surface
+        // via the existing error-dot infrastructure so the user sees it.
+        showError("Copy failed — clipboard unavailable.");
+      });
+    }
+  }
+
   // ── Inline edit ───────────────────────────────────────────────────────────
 
   function startEditing() {
@@ -546,6 +603,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
         {...(isFirst ? { "data-task-first": "" } : {})}
         onClick={handleRowClick}
         onDoubleClick={startEditing}
+        {...longPressHandlers}
       >
         {/* B04 — circle is the only interactive control inside the row; the row
             itself is a clickable region (no role="button") so we avoid
@@ -710,6 +768,16 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
           projectWikilink={task.parentProject}
         />
       )}
+      {/* Sprint J.2.10 — long-press context menu. Portaled, anchored at
+          the pointer's clientX/Y. Esc + outside-click + arrow-nav handled
+          by the menu component itself. */}
+      <LongPressMenu
+        open={longPressMenuPos !== null}
+        x={longPressMenuPos?.x ?? 0}
+        y={longPressMenuPos?.y ?? 0}
+        onClose={() => setLongPressMenuPos(null)}
+        onPick={handleLongPressPick}
+      />
     </div>
   );
 }
