@@ -243,7 +243,7 @@ All 8 sub-sprints + I.6 Bulk Move + I.9 R1+R2 convergence shipped:
 
 ### Sprint J — Feel Layer — COMPLETE (2026-04-26 → 2026-04-27, HEAD `31d0fbe`)
 
-All 15/15 polish items shipped: J.0.1 entry gate · J.1.1 stagger-fade · J.1.2 optimistic delete + bulk-delete + rollbackOptimistic · J.1.3 error-dot regression check · J.1.4 animation tokens · J.1.5 focus management · J.2.6 24×24 touch targets · J.2.7 prefers-contrast · J.2.8 color-blind cues (P1 fill + AlertCircle) · J.2.9 zoom audit (280px floor) · J.2.10 long-press menu (scaffold; wiring Sprint L) · J.2.11 haptics · J.2.12 skeleton crossfade · J.2.13 scroll-shadow · J.2.14 ⌘K focus trail · J.2.15 SSE backoff countdown.
+All 15/15 polish items shipped: J.0.1 entry gate · J.1.1 stagger-fade · J.1.2 optimistic delete + bulk-delete + rollbackOptimistic (CREATE shipped Sprint L 2026-05-05 commit `bbb519c`) · J.1.3 error-dot regression check · J.1.4 animation tokens · J.1.5 focus management · J.2.6 24×24 touch targets · J.2.7 prefers-contrast · J.2.8 color-blind cues (P1 fill + AlertCircle) · J.2.9 zoom audit (280px floor) · J.2.10 long-press menu (scaffold; wiring shipped Sprint L 2026-05-05 commit `bb0f076`) · J.2.11 haptics · J.2.12 skeleton crossfade · J.2.13 scroll-shadow · J.2.14 ⌘K focus trail · J.2.15 SSE backoff countdown.
 
 ### Phase K — Closure audit — COMPLETE (2026-04-27, HEAD `31d0fbe`)
 
@@ -260,3 +260,37 @@ R2 invariants at HEAD `31d0fbe`: BulkBar `restoreFocusBeforeUnmount`=8, `TOMBSTO
 `pnpm tsc --noEmit`: 0 errors. AI-tells: empty.
 
 Tag `sprint-i-j-k-complete` placed at HEAD.
+
+### Sprint L — Triple-Check Closure + Deferred Items — COMPLETE (2026-05-05, HEAD `bbb519c`)
+
+5-commit arc closing all post-Sprint-K deferred work surfaced via the triple-check pass-1 audit (Codex critic verdict on `44523fb`) plus HANDOFF §4.3 deferred items. Tag `triple-check-pass-1` remains anchored at gate-pass commit `6af1bb0`; Sprint L commits land on top. Public `pushREC/task-sidebar` synced with each push.
+
+Commit arc `6af1bb0..bbb519c`:
+
+| Commit | Subject | Closes |
+|---|---|---|
+| `e393717` | gitignore axe-core vendor + triple-check screenshot dir | Post-incident `.gitignore` (force-push aftermath) |
+| `63e4afe` | sanitize: strip absolute /Users/... paths from docs | docs/perf-baselines/sprint-i-{pre,post}.md + implementation-state.md L93 — replaced 3 `/Users/robertzinke/...` paths with `$HOME/...` placeholders matching the post-sanitization convention from commit `20cc2dd` |
+| `19dedb8` | chore: pin axe-core@4.10.0 as devDep | Codex critic LOW: axe-reproducibility — vendored `scripts/axe.min.js` was version-of-record but not declared in package.json. Now exact-pinned (matches axe.version="4.10.0" line 12 of vendored copy). pnpm install provisions `node_modules/axe-core/axe.min.js` 554KB. |
+| `bb0f076` | sprint-l-J.2.10: wire LongPressMenu pointer events on TaskRow | J.2.10 deferral closed. `useLongPress` hook spread on `.task-row`. handleLongPressPick: edit/delete (via detail panel + ConfirmModal) / copy-link (vault-relative wikilink with `#L{n}` anchor for inline tasks). Disabled while editing/applying/popover-open. |
+| `bbb519c` | sprint-l-J.1.2: complete optimisticCreate (placeholder + rollback) | J.1.2 deferral closed. `optimisticCreate(task)` action mirrors optimisticDelete in-place vault rewrite. QuickAdd snapshots vault → synthesizes InlineTask placeholder via crypto.randomUUID() + sentinel line 999_999 → on err rollbackOptimistic(snapshot). Server SSE refresh washes out placeholder by vault replacement. |
+
+Codex triple-check pass-1 verdict status (per `1-Projects/vault-sidebar/codex-critic-44523fb-verdict-2026-05-05.log`):
+- CRITICAL: 0 (none surfaced — verdict was "ship-readiness" tier)
+- HIGH: 1 closed (real-vault PNG leak in commits `44523fb` + `1806b86` — addressed via force-push remediation pre-Sprint-L)
+- MEDIUM: 0
+- LOW: 2 closed (axe-reproducibility shipped in `19dedb8`; tag-evidence-mismatch acknowledged by-design — tag stays at gate-pass `6af1bb0`)
+
+HANDOFF §4.3 deferred items final status:
+- D-01 / D-02 / D-03 / D-04 / D-05 / D-06 / D-07: shipped pre-Sprint-L during Sprint I/J/Phase K
+- D-08 / D-09 / D-10: skip/historical (no action ever planned per HANDOFF text)
+- J.2.10 LongPressMenu wiring: shipped Sprint L commit `bb0f076`
+- J.1.2 optimisticCreate: shipped Sprint L commit `bbb519c`
+
+Sprint H R2 invariants at HEAD `bbb519c`: 8/1/1/23/1 unchanged across all Sprint L commits. `pnpm tsc --noEmit` 0 errors. AI-tells empty.
+
+Outstanding LOW items (Sprint M candidates; non-blocking polish):
+- Gemini R2 deferred: ERROR-DOT-FALLBACK-COPY (wording polish on generic "Write failed" tooltip)
+- Gemini R2 deferred: TRUNCATION-SURROGATE-BREAK (emoji-at-37-byte-boundary slice in error tooltip text)
+
+Both are documented in PLAN-II-LOG.md (vault-side); deferred since Sprint H R2 close in 2026-04-19. No outstanding CRITICAL/HIGH/MEDIUM in any sprint.
