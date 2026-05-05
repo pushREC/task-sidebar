@@ -837,7 +837,10 @@ export function TaskDetailPanel({ task, tasksPath, projectGoal, projectWikilink 
     // real-undo PendingUndo (same pattern as BulkBar H.3.7). User can
     // click Undo in the toast OR hit ⌘Z within 5s to restore.
     const storeSetPendingUndo = useSidebarStore.getState().setPendingUndo;
-    const taskLabel = task.action.length > 40 ? `${task.action.slice(0, 37)}…` : task.action;
+    // Code-point-aware slice — avoids splitting emoji surrogate pairs into
+    // mojibake when an action ends near the 37-char boundary.
+    const actionChars = Array.from(task.action);
+    const taskLabel = actionChars.length > 40 ? `${actionChars.slice(0, 37).join("")}…` : task.action;
 
     function queueRestoreUndo(tombstoneId: string | undefined) {
       if (!tombstoneId) return;

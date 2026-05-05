@@ -68,7 +68,7 @@ interface SidebarState {
   /** Sprint H R2 D2 — per-task error message for hover-tooltip specificity.
    *  Populated via markTaskError(taskId, message?). Keyed by taskId; only
    *  populated when the caller supplies a message. TaskRow reads from this
-   *  Map and falls back to the generic "Write failed" string when unset. */
+   *  Map and falls back to the generic "Couldn't save" copy when unset. */
   taskErrorMessages: Map<string, string>;
   /** Legacy single-selection pointer for backward-compat with j/k nav.
    *  Sprint G adds `selectedTaskIds` as the authoritative multi-select.

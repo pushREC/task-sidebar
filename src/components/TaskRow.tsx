@@ -223,7 +223,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
       return "Request timed out — check network and retry.";
     }
     // Fallback — let the generic DOM attr handle it.
-    return "Write failed — check server response.";
+    return "Couldn't save — try again.";
   }
 
   // ── Sprint C: inline field edit (due / impact / urgency) ─────────────────
@@ -696,8 +696,8 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
                 <button
                   type="button"
                   className="task-error-dot-button"
-                  aria-label={taskErrorMessage ?? "Write failed. Click to dismiss."}
-                  data-error-msg={taskErrorMessage ?? "Write failed — check server response"}
+                  aria-label={taskErrorMessage ?? "Couldn't save. Click to dismiss."}
+                  data-error-msg={taskErrorMessage ?? "Couldn't save — try again"}
                   onClick={(e) => {
                     e.stopPropagation();
                     clearTaskError(task.id);
@@ -711,7 +711,7 @@ export function TaskRow({ task, isFirst, tasksPath, projects, indent, now, style
                 </button>
                 {/* M-5 — screen-reader announcement. aria-live="polite" so
                     cascading failures don't storm AT users. */}
-                <span aria-live="polite" className="sr-only">Write failed.</span>
+                <span aria-live="polite" className="sr-only">Couldn't save.</span>
               </>
             )}
             {/* Sprint C F10 — pencil on hover/selected. Keyboard `E` also
