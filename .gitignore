@@ -6,3 +6,8 @@ logs/
 screenshots/*/*.png.tmp
 *.playwright-cli/
 .playwright-cli/
+
+# Vendored axe-core (used by triple-check pass for a11y probes)
+scripts/axe.min.js
+# Triple-check evidence captures (real-vault data — never commit; use sample-vault for committable evidence)
+docs/screenshots/triple-check-pass-1/
